@@ -6,7 +6,7 @@ type Grid = number[][];
 type Mode = "diagonal" | "anti-diagonal" | "one-of-each";
 type DiggingMethod = "single" | "double";
 type CandidateRemoval = { cell: number; digit: number };
-type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; removed: CandidateRemoval[]; message: string };
+type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; message: string };
 type DifficultyRating = { rating: string; score: number; techniques: string[]; logical: boolean; walkthrough: WalkthroughStep[]; tally: Record<string, number> };
 const emptyGrid = () => Array.from({ length: 9 }, () => Array(9).fill(0));
 const allDigits = 0b111111111;
@@ -266,7 +266,7 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
       ? `Placed ${placed.map(cell => values[cell]).join(", ")} in ${placedNames.join(", ")}.`
       : `Eliminated candidates in ${removedNames.join(", ")}.`;
     steps.push(name);
-    walkthrough.push({ technique: name, values: [...values], candidates: [...candidates], affectedCells, removed, message });
+    walkthrough.push({ technique: name, values: [...values], candidates: [...candidates], affectedCells, placedCells: placed, removed, message });
   };
 
   // This matches sudokUI's order for these applicable techniques, while each
@@ -471,7 +471,7 @@ export default function Home() {
                 <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
               </svg>
               <div className="grid walkthrough-grid" aria-label={`Board after ${step.technique}`}>
-                {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""}`} key={cell}>
+                {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""} ${step.placedCells.includes(cell) ? "walkthrough-placed" : ""}`} key={cell}>
                   {value || <div className="snyder-notes" aria-label={`Candidates for row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`}>
                     {Array.from({ length: 9 }, (_, index) => index + 1).map(digit => {
                       const removed = step.removed.some(item => item.cell === cell && item.digit === digit);

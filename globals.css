@@ -44,7 +44,7 @@ h1 { margin: 0 0 2rem; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; lett
 .walkthrough-details .walkthrough-step { margin-top: 0; }
 .walkthrough-grid { background: #fff; }
 .walkthrough-focus { background: #dcfce7; box-shadow: inset 0 0 0 2px #16a34a; }
-.walkthrough-placed { color: #2563eb; }
+.walkthrough-placed { color: #2563eb !important; }
 .snyder-notes { width: 100%; height: 100%; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); padding: 0.14rem; color: #1d4ed8; font-size: clamp(0.42rem, 1.5vw, 0.75rem); font-weight: 700; line-height: 1; }
 .snyder-digit { display: grid; place-items: center; }
 .snyder-digit.removed { color: #dc2626; text-decoration: line-through; }

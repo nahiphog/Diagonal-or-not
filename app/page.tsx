@@ -5,6 +5,7 @@ import { useState } from "react";
 type Grid = number[][];
 type Mode = "diagonal" | "anti-diagonal" | "one-of-each";
 type DiggingMethod = "single" | "double";
+type DifficultyRating = { rating: string; score: number; techniques: string[] };
 const emptyGrid = () => Array.from({ length: 9 }, () => Array(9).fill(0));
 const allDigits = 0b111111111;
 const bitCount = (value: number) => value.toString(2).replaceAll("0", "").length;
@@ -209,6 +210,76 @@ function countDiagonalSolutions(startGrid: Grid, limit = 2) {
   return search();
 }
 
+// These ratings use the same SudokUI / HoDoKu-compatible scoring bands as the
+// Gattai generator: score the logical deductions used, then place a floor on
+// the rating for the hardest technique.  The diagonal units are included in
+// every candidate calculation, so the rating reflects this variant's rules.
+function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
+  const values = startGrid.flat();
+  const units = [
+    ...Array.from({ length: 9 }, (_, row) => Array.from({ length: 9 }, (_, column) => row * 9 + column)),
+    ...Array.from({ length: 9 }, (_, column) => Array.from({ length: 9 }, (_, row) => row * 9 + column)),
+    ...Array.from({ length: 9 }, (_, box) => {
+      const boxRow = Math.floor(box / 3) * 3, boxColumn = (box % 3) * 3;
+      return Array.from({ length: 9 }, (_, cell) => (boxRow + Math.floor(cell / 3)) * 9 + boxColumn + (cell % 3));
+    }),
+    Array.from({ length: 9 }, (_, index) => index * 10),
+    Array.from({ length: 9 }, (_, index) => (index + 1) * 8),
+  ];
+  const unitsFor = Array.from({ length: 81 }, (_, index) => units.filter(unit => unit.includes(index)));
+  const candidates = (index: number) => {
+    const used = new Set(unitsFor[index].flatMap(unit => unit.map(cell => values[cell])).filter(Boolean));
+    return Array.from({ length: 9 }, (_, offset) => offset + 1).filter(digit => !used.has(digit));
+  };
+  const steps: string[] = [];
+
+  while (values.some(value => !value)) {
+    const options = new Map(values.map((value, index) => [index, value ? [] : candidates(index)]));
+    const fullHouse = units.flatMap(unit => {
+      const blank = unit.filter(index => !values[index]);
+      return blank.length === 1 ? blank : [];
+    })[0];
+    if (fullHouse !== undefined) {
+      values[fullHouse] = options.get(fullHouse)![0];
+      steps.push("Full House");
+      continue;
+    }
+
+    const nakedSingle = [...options.entries()].find(([, choices]) => choices.length === 1);
+    if (nakedSingle) {
+      values[nakedSingle[0]] = nakedSingle[1][0];
+      steps.push("Naked Single");
+      continue;
+    }
+
+    let hiddenSingle: [number, number] | null = null;
+    for (const unit of units) {
+      for (let digit = 1; digit <= 9; digit++) {
+        const locations = unit.filter(index => options.get(index)?.includes(digit));
+        if (locations.length === 1) { hiddenSingle = [locations[0], digit]; break; }
+      }
+      if (hiddenSingle) break;
+    }
+    if (hiddenSingle) {
+      values[hiddenSingle[0]] = hiddenSingle[1];
+      steps.push("Hidden Single");
+      continue;
+    }
+    // The Gattai scale regards a search-only finish as Trial and error.
+    steps.push("Trial and error");
+    break;
+  }
+
+  const scores: Record<string, number> = { "Full House": 4, "Naked Single": 4, "Hidden Single": 14, "Trial and error": 10000 };
+  const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Trial and error": "Extreme" };
+  const order = ["Beginner", "Easy", "Medium", "Tricky", "Hard", "Unfair", "Extreme", "Nightmare"];
+  const maxScore: Record<string, number> = { Beginner: 400, Easy: 800, Medium: 1000, Tricky: 1150, Hard: 1600, Unfair: 1800, Extreme: 3000, Nightmare: Number.MAX_SAFE_INTEGER };
+  const score = steps.reduce((total, step) => total + scores[step], 0);
+  let rating = steps.reduce((hardest, step) => order.indexOf(levels[step]) > order.indexOf(hardest) ? levels[step] : hardest, "Beginner");
+  while (order.indexOf(rating) < order.length - 1 && score > maxScore[rating]) rating = order[order.indexOf(rating) + 1];
+  return { rating, score, techniques: [...new Set(steps)] };
+}
+
 function digDiagonal(method: DiggingMethod) {
   const solution = generateGrid("diagonal");
   const puzzle = solution.map(row => [...row]);
@@ -236,15 +307,17 @@ export default function Home() {
   const [solution, setSolution] = useState<Grid | null>(null);
   const [elapsed, setElapsed] = useState<number | null>(null);
   const [diggingMethod, setDiggingMethod] = useState<DiggingMethod>("double");
+  const [difficulty, setDifficulty] = useState<DifficultyRating | null>(null);
   const generate = () => {
     const started = performance.now();
     if (mode === "diagonal") {
       const dug = digDiagonal(diggingMethod);
       setGrid(dug.puzzle); setSolution(dug.solution);
-    } else { setGrid(generateGrid(mode)); setSolution(null); }
+      setDifficulty(rateDiagonalPuzzle(dug.puzzle));
+    } else { setGrid(generateGrid(mode)); setSolution(null); setDifficulty(null); }
     setElapsed(performance.now() - started);
   };
-  const selectMode = (nextMode: Mode) => { setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); };
+  const selectMode = (nextMode: Mode) => { setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); };
   const descriptions: Record<Mode, string> = {
     diagonal: "Normal Sudoku rules apply. Digits along the indicated diagonals cannot repeat.",
     "anti-diagonal": "Normal Sudoku rules apply. Exactly three distinct numbers appear along each marked diagonal.",
@@ -253,7 +326,8 @@ export default function Home() {
 
   return (
     <main className="page">
-      <h1>Diagonal or not</h1>
+      <style>{`.diagonal-guides line { stroke-width: 1.8 !important; stroke-dasharray: 1.5 2.4 !important; }`}</style>
+      <h1>Diagonalize My Sudoku</h1>
       <div className="mode-picker" aria-label="Puzzle type">
         <button className={mode === "diagonal" ? "active" : ""} onClick={() => selectMode("diagonal")}>Diagonal</button>
         <button className={mode === "anti-diagonal" ? "active" : ""} onClick={() => selectMode("anti-diagonal")}>Anti-diagonal</button>
@@ -278,7 +352,8 @@ export default function Home() {
       </label>
       <button className="generate-button" onClick={generate}>Generate a grid</button>
       {mode === "diagonal" && solution && <section className="dig-results">
-        <p>{grid.flat().filter(Boolean).length} givens · {(elapsed ?? 0).toFixed(0)} ms</p>
+        <p>{grid.flat().filter(Boolean).length} givens · Difficulty: {difficulty?.rating ?? "Unrated"} ({difficulty?.score ?? 0}) · {(elapsed ?? 0).toFixed(0)} ms</p>
+        {difficulty && <p className="difficulty-techniques">Rating basis: {difficulty.techniques.join(", ")}</p>}
         <h2>Completed grid</h2>
         <div className="grid solution-grid" aria-label="Completed sudoku grid">
           {solution.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className={grid[rowIndex][columnIndex] ? "cell given" : "cell solved"} key={`${rowIndex}-${columnIndex}`}>{value}</div>))}

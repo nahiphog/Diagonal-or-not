@@ -269,6 +269,16 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
     walkthrough.push({ technique: name, values: [...values], candidates: [...candidates], affectedCells, placedCells: placed, removed, message });
   };
 
+  walkthrough.push({
+    technique: "Starting position",
+    values: [...values],
+    candidates: [...candidates],
+    affectedCells: [],
+    placedCells: [],
+    removed: [],
+    message: "Starting board with all available Snyder notations.",
+  });
+
   // This matches sudokUI's order for these applicable techniques, while each
   // finder uses 29 units so diagonal deductions are included as well.
   while (values.some(value => !value)) {
@@ -458,13 +468,19 @@ export default function Home() {
       <button className="generate-button" onClick={generate}>Generate a grid</button>
       {mode === "diagonal" && solution && <section className="dig-results">
         <p>{grid.flat().filter(Boolean).length} givens · Difficulty: {difficulty?.rating ?? "Unrated"} ({difficulty?.score ?? 0}) · {(elapsed ?? 0).toFixed(0)} ms</p>
-        {difficulty && <p className="difficulty-techniques">Technique tally: {Object.entries(difficulty.tally).map(([technique, count]) => `${technique} ×${count}`).join(" · ")}</p>}
+        {difficulty && <div className="technique-tally">
+          <h2>Technique tally</h2>
+          <table>
+            <thead><tr><th>Technique</th><th>Used in the steps</th></tr></thead>
+            <tbody>{Object.entries(difficulty.tally).map(([technique, count]) => <tr key={technique}><td>{technique}</td><td>{count}</td></tr>)}</tbody>
+          </table>
+        </div>}
         {difficulty && <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>}
         {difficulty && difficulty.walkthrough.length > 0 && (() => {
           const step = difficulty.walkthrough[walkthroughIndex];
           return <section className="walkthrough" aria-label="Interactive solution walkthrough">
             <h2>Solution walkthrough</h2>
-            <p className="walkthrough-step">Step {walkthroughIndex + 1} of {difficulty.walkthrough.length} · <strong>{step.technique}</strong></p>
+            <p className="walkthrough-step">Step {walkthroughIndex} of {difficulty.walkthrough.length - 1} · <strong>{step.technique}</strong></p>
             <div className="grid-frame walkthrough-frame">
               <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                 <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />

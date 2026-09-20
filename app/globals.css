@@ -28,6 +28,12 @@ h1 { margin: 0 0 2rem; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; lett
 .dig-results p { color: #4b5563; }
 .difficulty-techniques { margin-top: -0.5rem; font-size: 0.85rem; }
 .difficulty-note { margin-top: -0.5rem; font-size: 0.8rem; font-style: italic; }
+.technique-tally { margin: 1.25rem 0; overflow-x: auto; }
+.technique-tally h2 { margin: 0 0 0.6rem; font-size: 1.1rem; }
+.technique-tally table { width: 100%; border-collapse: collapse; background: #fff; font-size: 0.9rem; }
+.technique-tally th, .technique-tally td { border: 1px solid #d1d5db; padding: 0.55rem 0.65rem; text-align: left; }
+.technique-tally th { background: #eff6ff; color: #1e3a8a; }
+.technique-tally td:last-child { width: 9rem; text-align: center; font-weight: 700; }
 .walkthrough { margin: 2rem 0; padding: 1.25rem; border: 1px solid #bfdbfe; border-radius: 0.7rem; background: #f8fbff; }
 .walkthrough h2 { margin-top: 0; }
 .walkthrough-step { font-size: 0.92rem; }

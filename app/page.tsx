@@ -260,10 +260,11 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
       placed.includes(cell) ? [] : digits(mask & ~candidates[cell]).map(digit => ({ cell, digit })),
     );
     const affectedCells = [...new Set([...placed, ...removed.map(item => item.cell)])];
-    const names = affectedCells.map(cell => `R${Math.floor(cell / 9) + 1}C${cell % 9 + 1}`);
+    const placedNames = placed.map(cell => `R${Math.floor(cell / 9) + 1}C${cell % 9 + 1}`);
+    const removedNames = [...new Set(removed.map(item => `R${Math.floor(item.cell / 9) + 1}C${item.cell % 9 + 1}`))];
     const message = placed.length
-      ? `Placed ${placed.map(cell => values[cell]).join(", ")} in ${names.join(", ")}.`
-      : `Eliminated candidates in ${names.join(", ")}.`;
+      ? `Placed ${placed.map(cell => values[cell]).join(", ")} in ${placedNames.join(", ")}.`
+      : `Eliminated candidates in ${removedNames.join(", ")}.`;
     steps.push(name);
     walkthrough.push({ technique: name, values: [...values], candidates: [...candidates], affectedCells, removed, message });
   };

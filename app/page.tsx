@@ -7,7 +7,7 @@ type Mode = "diagonal" | "anti-diagonal" | "one-of-each";
 type DiggingMethod = "single" | "double";
 type CandidateRemoval = { cell: number; digit: number };
 type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; message: string };
-type DifficultyRating = { rating: string; score: number; techniques: string[]; logical: boolean; walkthrough: WalkthroughStep[]; tally: Record<string, number> };
+type DifficultyRating = { rating: string; score: number; techniques: string[]; logical: boolean; walkthrough: WalkthroughStep[]; tally: Record<string, number>; givens: number[]; initialCandidates: number[] };
 const emptyGrid = () => Array.from({ length: 9 }, () => Array(9).fill(0));
 const allDigits = 0b111111111;
 const bitCount = (value: number) => value.toString(2).replaceAll("0", "").length;
@@ -238,6 +238,7 @@ function countDiagonalSolutions(startGrid: Grid, limit = 2) {
 // is a legitimate last-resort technique worth 10,000 points, not a score cap.
 function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
   const values = startGrid.flat();
+  const givens = [...values];
   const units = [
     ...Array.from({ length: 9 }, (_, row) => Array.from({ length: 9 }, (_, column) => row * 9 + column)),
     ...Array.from({ length: 9 }, (_, column) => Array.from({ length: 9 }, (_, row) => row * 9 + column)),
@@ -255,6 +256,9 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
     const used = new Set(peers[index].map(cell => values[cell]).filter(Boolean));
     return Array.from({ length: 9 }, (_, offset) => offset + 1).filter(digit => !used.has(digit)).reduce((mask, digit) => mask | (1 << (digit - 1)), 0);
   });
+  // Preserve the first Snyder layout so every later slide can show each
+  // original candidate: still available in blue, or eliminated in red.
+  const initialCandidates = [...candidates];
   const digits = (mask: number) => Array.from({ length: 9 }, (_, offset) => offset + 1).filter(digit => mask & (1 << (digit - 1)));
   const popcount = (mask: number) => digits(mask).length;
   const steps: string[] = [];
@@ -409,7 +413,7 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
   let rating = steps.reduce((hardest, step) => order.indexOf(levels[step]) > order.indexOf(hardest) ? levels[step] : hardest, "Beginner");
   while (order.indexOf(rating) < order.length - 1 && score > maxScore[rating]) rating = order[order.indexOf(rating) + 1];
   const tally = steps.reduce<Record<string, number>>((counts, step) => ({ ...counts, [step]: (counts[step] ?? 0) + 1 }), {});
-  return { rating, score, techniques: [...new Set(steps)], logical: !steps.includes("Brute Force"), walkthrough, tally };
+  return { rating, score, techniques: [...new Set(steps)], logical: !steps.includes("Brute Force"), walkthrough, tally, givens, initialCandidates };
 }
 
 function digDiagonal(method: DiggingMethod) {
@@ -512,12 +516,13 @@ export default function Home() {
                   <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
                 </svg>
                 <div className="grid walkthrough-grid" aria-label={`Board after ${step.technique}`}>
-                  {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""} ${step.placedCells.includes(cell) ? "walkthrough-placed" : ""}`} key={cell}>
-                    {value || <div className="snyder-notes" aria-label={`Candidates for row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`}>
+                  {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""}`} key={cell}>
+                    {value ? <span className={difficulty.givens[cell] ? "" : "walkthrough-placed"}>{value}</span> : <div className="snyder-notes" aria-label={`Candidates for row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`}>
                       {Array.from({ length: 9 }, (_, index) => index + 1).map(digit => {
-                        const removed = step.removed.some(item => item.cell === cell && item.digit === digit);
+                        const wasCandidate = Boolean(difficulty.initialCandidates[cell] & (1 << (digit - 1)));
                         const available = Boolean(step.candidates[cell] & (1 << (digit - 1)));
-                        return <span className={removed ? "snyder-digit removed" : "snyder-digit"} key={digit}>{available || removed ? digit : ""}</span>;
+                        const removed = wasCandidate && !available;
+                        return <span className={removed ? "snyder-digit removed" : "snyder-digit"} key={digit}>{wasCandidate ? digit : ""}</span>;
                       })}
                     </div>}
                   </div>)}

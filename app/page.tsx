@@ -5,7 +5,8 @@ import { useState } from "react";
 type Grid = number[][];
 type Mode = "diagonal" | "anti-diagonal" | "one-of-each";
 type DiggingMethod = "single" | "double";
-type DifficultyRating = { rating: string; score: number; techniques: string[]; logical: boolean };
+type WalkthroughStep = { technique: string; values: number[]; affectedCells: number[]; message: string };
+type DifficultyRating = { rating: string; score: number; techniques: string[]; logical: boolean; walkthrough: WalkthroughStep[]; tally: Record<string, number> };
 const emptyGrid = () => Array.from({ length: 9 }, () => Array(9).fill(0));
 const allDigits = 0b111111111;
 const bitCount = (value: number) => value.toString(2).replaceAll("0", "").length;
@@ -237,6 +238,7 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
   const digits = (mask: number) => Array.from({ length: 9 }, (_, offset) => offset + 1).filter(digit => mask & (1 << (digit - 1)));
   const popcount = (mask: number) => digits(mask).length;
   const steps: string[] = [];
+  const walkthrough: WalkthroughStep[] = [];
   const place = (cell: number, digit: number) => {
     values[cell] = digit; candidates[cell] = 0;
     const mask = ~(1 << (digit - 1));
@@ -248,8 +250,20 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
     if (items.length < size) return [];
     return items.flatMap((item, index) => combinations(items.slice(index + 1), size - 1).map(rest => [item, ...rest]));
   };
-  const unitName = (unit: number) => unit < 9 ? `row ${unit + 1}` : unit < 18 ? `column ${unit - 8}` : unit < 27 ? `box ${unit - 17}` : unit === 27 ? "main diagonal" : "anti-diagonal";
-  const add = (name: string, action: () => void) => { action(); steps.push(name); };
+  const add = (name: string, action: () => void) => {
+    const beforeValues = [...values];
+    const beforeCandidates = [...candidates];
+    action();
+    const placed = values.map((value, cell) => value && value !== beforeValues[cell] ? cell : -1).filter(cell => cell >= 0);
+    const eliminated = candidates.map((mask, cell) => mask !== beforeCandidates[cell] && !values[cell] ? cell : -1).filter(cell => cell >= 0);
+    const affectedCells = placed.length ? placed : [...new Set(eliminated)];
+    const names = affectedCells.map(cell => `R${Math.floor(cell / 9) + 1}C${cell % 9 + 1}`);
+    const message = placed.length
+      ? `Placed ${placed.map(cell => values[cell]).join(", ")} in ${names.join(", ")}.`
+      : `Eliminated candidates in ${names.join(", ")}.`;
+    steps.push(name);
+    walkthrough.push({ technique: name, values: [...values], affectedCells, message });
+  };
 
   // This matches sudokUI's order for these applicable techniques, while each
   // finder uses 29 units so diagonal deductions are included as well.
@@ -361,7 +375,8 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
   const score = steps.reduce((total, step) => total + scores[step], 0);
   let rating = steps.reduce((hardest, step) => order.indexOf(levels[step]) > order.indexOf(hardest) ? levels[step] : hardest, "Beginner");
   while (order.indexOf(rating) < order.length - 1 && score > maxScore[rating]) rating = order[order.indexOf(rating) + 1];
-  return { rating, score, techniques: [...new Set(steps)], logical: !steps.includes("Brute Force") };
+  const tally = steps.reduce<Record<string, number>>((counts, step) => ({ ...counts, [step]: (counts[step] ?? 0) + 1 }), {});
+  return { rating, score, techniques: [...new Set(steps)], logical: !steps.includes("Brute Force"), walkthrough, tally };
 }
 
 function digDiagonal(method: DiggingMethod) {
@@ -392,6 +407,7 @@ export default function Home() {
   const [elapsed, setElapsed] = useState<number | null>(null);
   const [diggingMethod, setDiggingMethod] = useState<DiggingMethod>("double");
   const [difficulty, setDifficulty] = useState<DifficultyRating | null>(null);
+  const [walkthroughIndex, setWalkthroughIndex] = useState(0);
   const generate = () => {
     const started = performance.now();
     if (mode === "diagonal") {
@@ -399,9 +415,10 @@ export default function Home() {
       setGrid(dug.puzzle); setSolution(dug.solution);
       setDifficulty(rateDiagonalPuzzle(dug.puzzle));
     } else { setGrid(generateGrid(mode)); setSolution(null); setDifficulty(null); }
+    setWalkthroughIndex(0);
     setElapsed(performance.now() - started);
   };
-  const selectMode = (nextMode: Mode) => { setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); };
+  const selectMode = (nextMode: Mode) => { setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); };
   const descriptions: Record<Mode, string> = {
     diagonal: "Normal Sudoku rules apply. Digits along the indicated diagonals cannot repeat.",
     "anti-diagonal": "Normal Sudoku rules apply. Exactly three distinct numbers appear along each marked diagonal.",
@@ -437,8 +454,29 @@ export default function Home() {
       <button className="generate-button" onClick={generate}>Generate a grid</button>
       {mode === "diagonal" && solution && <section className="dig-results">
         <p>{grid.flat().filter(Boolean).length} givens · Difficulty: {difficulty?.rating ?? "Unrated"} ({difficulty?.score ?? 0}) · {(elapsed ?? 0).toFixed(0)} ms</p>
-        {difficulty && <p className="difficulty-techniques">Rating basis: {difficulty.techniques.join(", ")}</p>}
+        {difficulty && <p className="difficulty-techniques">Technique tally: {Object.entries(difficulty.tally).map(([technique, count]) => `${technique} ×${count}`).join(" · ")}</p>}
         {difficulty && <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>}
+        {difficulty && difficulty.walkthrough.length > 0 && (() => {
+          const step = difficulty.walkthrough[walkthroughIndex];
+          return <section className="walkthrough" aria-label="Interactive solution walkthrough">
+            <h2>Solution walkthrough</h2>
+            <p className="walkthrough-step">Step {walkthroughIndex + 1} of {difficulty.walkthrough.length} · <strong>{step.technique}</strong></p>
+            <div className="grid-frame walkthrough-frame">
+              <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
+                <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
+              </svg>
+              <div className="grid walkthrough-grid" aria-label={`Board after ${step.technique}`}>
+                {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""}`} key={cell}>{value || ""}</div>)}
+              </div>
+            </div>
+            <p className="walkthrough-message">{step.message}</p>
+            <div className="walkthrough-controls">
+              <button onClick={() => setWalkthroughIndex(index => Math.max(0, index - 1))} disabled={walkthroughIndex === 0}>Previous</button>
+              <button onClick={() => setWalkthroughIndex(index => Math.min(difficulty.walkthrough.length - 1, index + 1))} disabled={walkthroughIndex === difficulty.walkthrough.length - 1}>Next</button>
+            </div>
+          </section>;
+        })()}
         <h2>Completed grid</h2>
         <div className="grid solution-grid" aria-label="Completed sudoku grid">
           {solution.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className={grid[rowIndex][columnIndex] ? "cell given" : "cell solved"} key={`${rowIndex}-${columnIndex}`}>{value}</div>))}

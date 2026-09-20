@@ -5,7 +5,8 @@ import { useState } from "react";
 type Grid = number[][];
 type Mode = "diagonal" | "anti-diagonal" | "one-of-each";
 type DiggingMethod = "single" | "double";
-type WalkthroughStep = { technique: string; values: number[]; affectedCells: number[]; message: string };
+type CandidateRemoval = { cell: number; digit: number };
+type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; removed: CandidateRemoval[]; message: string };
 type DifficultyRating = { rating: string; score: number; techniques: string[]; logical: boolean; walkthrough: WalkthroughStep[]; tally: Record<string, number> };
 const emptyGrid = () => Array.from({ length: 9 }, () => Array(9).fill(0));
 const allDigits = 0b111111111;
@@ -255,14 +256,16 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
     const beforeCandidates = [...candidates];
     action();
     const placed = values.map((value, cell) => value && value !== beforeValues[cell] ? cell : -1).filter(cell => cell >= 0);
-    const eliminated = candidates.map((mask, cell) => mask !== beforeCandidates[cell] && !values[cell] ? cell : -1).filter(cell => cell >= 0);
-    const affectedCells = placed.length ? placed : [...new Set(eliminated)];
+    const removed = beforeCandidates.flatMap((mask, cell) =>
+      placed.includes(cell) ? [] : digits(mask & ~candidates[cell]).map(digit => ({ cell, digit })),
+    );
+    const affectedCells = [...new Set([...placed, ...removed.map(item => item.cell)])];
     const names = affectedCells.map(cell => `R${Math.floor(cell / 9) + 1}C${cell % 9 + 1}`);
     const message = placed.length
       ? `Placed ${placed.map(cell => values[cell]).join(", ")} in ${names.join(", ")}.`
       : `Eliminated candidates in ${names.join(", ")}.`;
     steps.push(name);
-    walkthrough.push({ technique: name, values: [...values], affectedCells, message });
+    walkthrough.push({ technique: name, values: [...values], candidates: [...candidates], affectedCells, removed, message });
   };
 
   // This matches sudokUI's order for these applicable techniques, while each
@@ -467,10 +470,18 @@ export default function Home() {
                 <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
               </svg>
               <div className="grid walkthrough-grid" aria-label={`Board after ${step.technique}`}>
-                {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""}`} key={cell}>{value || ""}</div>)}
+                {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""}`} key={cell}>
+                  {value || <div className="snyder-notes" aria-label={`Candidates for row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`}>
+                    {Array.from({ length: 9 }, (_, index) => index + 1).map(digit => {
+                      const removed = step.removed.some(item => item.cell === cell && item.digit === digit);
+                      const available = Boolean(step.candidates[cell] & (1 << (digit - 1)));
+                      return <span className={removed ? "snyder-digit removed" : "snyder-digit"} key={digit}>{available || removed ? digit : ""}</span>;
+                    })}
+                  </div>}
+                </div>)}
               </div>
             </div>
-            <p className="walkthrough-message">{step.message}</p>
+            <p className="walkthrough-message">{step.message}{step.removed.length > 0 ? ` ${step.removed.length} Snyder notation${step.removed.length === 1 ? "" : "s"} removed in red.` : ""}</p>
             <div className="walkthrough-controls">
               <button onClick={() => setWalkthroughIndex(index => Math.max(0, index - 1))} disabled={walkthroughIndex === 0}>Previous</button>
               <button onClick={() => setWalkthroughIndex(index => Math.min(difficulty.walkthrough.length - 1, index + 1))} disabled={walkthroughIndex === difficulty.walkthrough.length - 1}>Next</button>

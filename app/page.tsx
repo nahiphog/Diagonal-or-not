@@ -11,6 +11,25 @@ type DifficultyRating = { rating: string; score: number; techniques: string[]; l
 const emptyGrid = () => Array.from({ length: 9 }, () => Array(9).fill(0));
 const allDigits = 0b111111111;
 const bitCount = (value: number) => value.toString(2).replaceAll("0", "").length;
+// The sudokUI ratings define the technique order: easy methods come first,
+// while the harder ones follow below.
+const sudokUiTechniqueDifficulty: Record<string, number> = {
+  "Full House": 4,
+  "Naked Single": 4,
+  "Hidden Single": 14,
+  "Locked Candidates (Pointing)": 50,
+  "Locked Candidates (Claiming)": 50,
+  "Naked Pair": 60,
+  "Hidden Pair": 70,
+  "Naked Triple": 80,
+  "Hidden Triple": 100,
+  "Naked Quadruple": 120,
+  "X-Wing": 140,
+  "Hidden Quadruple": 150,
+  "Swordfish": 150,
+  "Jellyfish": 160,
+  "Brute Force": 10000,
+};
 const antiDiagonalTemplate = [
   [1, 6, 5, 2, 3, 8, 7, 9, 4],
   [4, 2, 7, 6, 1, 9, 3, 5, 8],
@@ -382,7 +401,7 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
     add("Brute Force", () => place(cell, draft[cell]));
   }
 
-  const scores: Record<string, number> = { "Full House": 4, "Naked Single": 4, "Hidden Single": 14, "Locked Candidates (Pointing)": 50, "Locked Candidates (Claiming)": 50, "Naked Pair": 60, "Naked Triple": 80, "Hidden Pair": 70, "Hidden Triple": 100, "Naked Quadruple": 120, "Hidden Quadruple": 150, "X-Wing": 140, "Swordfish": 150, "Jellyfish": 160, "Brute Force": 10000 };
+  const scores = sudokUiTechniqueDifficulty;
   const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Locked Candidates (Pointing)": "Medium", "Locked Candidates (Claiming)": "Medium", "Naked Pair": "Medium", "Naked Triple": "Medium", "Hidden Pair": "Medium", "Hidden Triple": "Medium", "Naked Quadruple": "Hard", "Hidden Quadruple": "Hard", "X-Wing": "Hard", "Swordfish": "Hard", "Jellyfish": "Hard", "Brute Force": "Extreme" };
   const order = ["Beginner", "Easy", "Medium", "Tricky", "Hard", "Unfair", "Extreme", "Nightmare"];
   const maxScore: Record<string, number> = { Beginner: 400, Easy: 800, Medium: 1000, Tricky: 1150, Hard: 1600, Unfair: 1800, Extreme: 3000, Nightmare: Number.MAX_SAFE_INTEGER };
@@ -472,7 +491,10 @@ export default function Home() {
           <h2>Technique tally</h2>
           <table>
             <thead><tr><th>Technique</th><th>Used in steps</th></tr></thead>
-            <tbody>{Object.entries(difficulty.tally).map(([technique]) => {
+            <tbody>{Object.entries(difficulty.tally).sort(([first], [second]) =>
+              (sudokUiTechniqueDifficulty[first] ?? Number.MAX_SAFE_INTEGER) - (sudokUiTechniqueDifficulty[second] ?? Number.MAX_SAFE_INTEGER)
+              || first.localeCompare(second),
+            ).map(([technique]) => {
               const usedSteps = difficulty.walkthrough.slice(1).flatMap((step, index) => step.technique === technique ? [index + 1] : []);
               return <tr key={technique}><td>{technique}</td><td>{usedSteps.join(", ")}</td></tr>;
             })}</tbody>
@@ -483,25 +505,29 @@ export default function Home() {
           const step = difficulty.walkthrough[walkthroughIndex];
           return <section className="walkthrough" aria-label="Interactive solution walkthrough">
             <h2>Solution walkthrough</h2>
-            <div className="grid-frame walkthrough-frame">
-              <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
-                <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
-              </svg>
-              <div className="grid walkthrough-grid" aria-label={`Board after ${step.technique}`}>
-                {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""} ${step.placedCells.includes(cell) ? "walkthrough-placed" : ""}`} key={cell}>
-                  {value || <div className="snyder-notes" aria-label={`Candidates for row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`}>
-                    {Array.from({ length: 9 }, (_, index) => index + 1).map(digit => {
-                      const removed = step.removed.some(item => item.cell === cell && item.digit === digit);
-                      const available = Boolean(step.candidates[cell] & (1 << (digit - 1)));
-                      return <span className={removed ? "snyder-digit removed" : "snyder-digit"} key={digit}>{available || removed ? digit : ""}</span>;
-                    })}
-                  </div>}
-                </div>)}
+            <div className="walkthrough-layout">
+              <div className="grid-frame walkthrough-frame">
+                <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
+                  <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
+                </svg>
+                <div className="grid walkthrough-grid" aria-label={`Board after ${step.technique}`}>
+                  {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""} ${step.placedCells.includes(cell) ? "walkthrough-placed" : ""}`} key={cell}>
+                    {value || <div className="snyder-notes" aria-label={`Candidates for row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`}>
+                      {Array.from({ length: 9 }, (_, index) => index + 1).map(digit => {
+                        const removed = step.removed.some(item => item.cell === cell && item.digit === digit);
+                        const available = Boolean(step.candidates[cell] & (1 << (digit - 1)));
+                        return <span className={removed ? "snyder-digit removed" : "snyder-digit"} key={digit}>{available || removed ? digit : ""}</span>;
+                      })}
+                    </div>}
+                  </div>)}
+                </div>
               </div>
+              <aside className="walkthrough-details">
+                <p className="walkthrough-step">Step {walkthroughIndex} of {difficulty.walkthrough.length - 1} · <strong>{step.technique}</strong></p>
+                <p className="walkthrough-message">{step.message}{step.removed.length > 0 ? ` ${step.removed.length} Snyder notation${step.removed.length === 1 ? "" : "s"} removed in red.` : ""}</p>
+              </aside>
             </div>
-            <p className="walkthrough-step">Step {walkthroughIndex} of {difficulty.walkthrough.length - 1} · <strong>{step.technique}</strong></p>
-            <p className="walkthrough-message">{step.message}{step.removed.length > 0 ? ` ${step.removed.length} Snyder notation${step.removed.length === 1 ? "" : "s"} removed in red.` : ""}</p>
             <div className="walkthrough-controls">
               <button onClick={() => setWalkthroughIndex(index => Math.max(0, index - 1))} disabled={walkthroughIndex === 0}>Previous</button>
               <button onClick={() => setWalkthroughIndex(index => Math.min(difficulty.walkthrough.length - 1, index + 1))} disabled={walkthroughIndex === difficulty.walkthrough.length - 1}>Next</button>

@@ -1,84 +1,10 @@
 "use client";
 import { useState } from "react";
-
-type Grid = number[][];
-type Mode = "diagonal" | "anti-diagonal";
-const template = [
-[1,6,5,2,3,8,7,9,4],[4,2,7,6,1,9,3,5,8],[8,9,3,4,5,7,2,1,6],
-[5,3,9,1,7,4,6,8,2],[7,4,8,9,2,6,5,3,1],[6,1,2,5,8,3,4,7,9],
-[3,7,4,8,9,2,1,6,5],[9,5,6,3,4,1,8,2,7],[2,8,1,7,6,5,9,4,3],
-];
-const shuffle = (values: number[]) => {
-  const result = [...values];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
-};
-
-function generateAntiDiagonal(): Grid {
-  const digits = shuffle([1,2,3,4,5,6,7,8,9]);
-  const top = shuffle([0,1,2]);
-  const middle = Math.random() < .5 ? [0,1,2] : [2,1,0];
-  const bottom = [2 - top[2], 2 - top[1], 2 - top[0]];
-  const permutations = [top, middle, bottom];
-  return Array.from({ length: 9 }, (_, r) => Array.from({ length: 9 }, (_, c) => {
-    const sr = Math.floor(r / 3) * 3 + permutations[Math.floor(r / 3)][r % 3];
-    const sc = Math.floor(c / 3) * 3 + permutations[Math.floor(c / 3)][c % 3];
-    return digits[template[sr][sc] - 1];
-  }));
-}
-
-function generateDiagonal(): Grid {
-  const grid = Array.from({ length: 9 }, () => Array(9).fill(0));
-  const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0), diagonals = [0,0];
-  const choices = (r: number, c: number) => {
-    const h = Math.floor(r / 3) * 3 + Math.floor(c / 3);
-    let used = rows[r] | columns[c] | houses[h];
-    if (r === c) used |= diagonals[0];
-    if (r + c === 8) used |= diagonals[1];
-    return 0b111111111 & ~used;
-  };
-  const put = (r: number, c: number, d: number, add: boolean) => {
-    const bit = 1 << (d - 1), h = Math.floor(r / 3) * 3 + Math.floor(c / 3);
-    grid[r][c] = add ? d : 0;
-    rows[r] = add ? rows[r] | bit : rows[r] ^ bit;
-    columns[c] = add ? columns[c] | bit : columns[c] ^ bit;
-    houses[h] = add ? houses[h] | bit : houses[h] ^ bit;
-    if (r === c) diagonals[0] = add ? diagonals[0] | bit : diagonals[0] ^ bit;
-    if (r + c === 8) diagonals[1] = add ? diagonals[1] | bit : diagonals[1] ^ bit;
-  };
-  const solve = (): boolean => {
-    let br = -1, bc = -1, mask = 0, fewest = 10;
-    for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) if (!grid[r][c]) {
-      const next = choices(r,c), count = next.toString(2).replaceAll("0", "").length;
-      if (count < fewest) { br = r; bc = c; mask = next; fewest = count; }
-    }
-    if (br < 0) return true;
-    for (const d of shuffle([1,2,3,4,5,6,7,8,9].filter(d => mask & (1 << (d - 1))))) {
-      put(br,bc,d,true); if (solve()) return true; put(br,bc,d,false);
-    }
-    return false;
-  };
-  solve(); return grid;
-}
-
-export default function Home() {
-  const [mode, setMode] = useState<Mode>("diagonal");
-  const [grid, setGrid] = useState<Grid>(() => Array.from({ length: 9 }, () => Array(9).fill(0)));
-  return <main className="page">
-    <h1>Diagonal or not</h1>
-    <div className="mode-picker" aria-label="Puzzle type">
-      <button className={mode === "diagonal" ? "active" : ""} onClick={() => setMode("diagonal")}>Diagonal</button>
-      <button className={mode === "anti-diagonal" ? "active" : ""} onClick={() => setMode("anti-diagonal")}>Anti-diagonal</button>
-    </div>
-    <div className="grid-frame"><svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      <line x1="0" y1="0" x2="50" y2="50"/><line x1="100" y1="100" x2="50" y2="50"/>
-      <line x1="100" y1="0" x2="50" y2="50"/><line x1="0" y1="100" x2="50" y2="50"/>
-    </svg><div className="grid" aria-label="9 by 9 sudoku grid">
-      {grid.flatMap((row,r) => row.map((value,c) => <div className="cell" key={r + "-" + c}>{value || ""}</div>))}
-    </div></div>
-    <button className="generate-button" onClick={() => setGrid(mode === "diagonal" ? generateDiagonal() : generateAntiDiagonal())}>Generate a grid</button>
-  </main>;
-}
+type Mode="diagonal"|"anti-diagonal"|"one-of-each"; type Grid=number[][];
+const D=[1,2,3,4,5,6,7,8,9];
+const diag=[[4,6,1,3,9,5,2,7,8],[3,5,7,2,8,6,9,1,4],[8,2,9,7,1,4,5,3,6],[9,3,2,6,5,7,8,4,1],[6,8,5,4,3,1,7,9,2],[1,7,4,9,2,8,3,6,5],[7,9,6,5,4,2,1,8,3],[5,4,8,1,7,3,6,2,9],[2,1,3,8,6,9,4,5,7]];
+const anti=[[1,6,5,2,3,8,7,9,4],[4,2,7,6,1,9,3,5,8],[8,9,3,4,5,7,2,1,6],[5,3,9,1,7,4,6,8,2],[7,4,8,9,2,6,5,3,1],[6,1,2,5,8,3,4,7,9],[3,7,4,8,9,2,1,6,5],[9,5,6,3,4,1,8,2,7],[2,8,1,7,6,5,9,4,3]];
+const one=[[1,9,2,3,5,8,7,6,4],[7,4,3,6,1,2,9,5,8],[5,6,8,4,7,9,2,3,1],[3,1,6,9,2,4,8,7,5],[4,8,5,7,3,1,6,9,2],[9,2,7,5,8,6,1,4,3],[8,7,4,2,9,3,5,1,6],[6,5,1,8,4,7,3,2,9],[2,3,9,1,6,5,4,8,7]];
+const shuffle=(a:number[])=>{a=[...a];for(let i=8;i;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
+const map=(g:Grid)=>{const p=shuffle(D);return g.map(r=>r.map(x=>p[x-1]))};const transpose=(g:Grid)=>g[0].map((_,c)=>g.map(r=>r[c]));
+export default function Home(){const [mode,setMode]=useState<Mode>("diagonal");const [grid,setGrid]=useState<Grid>(Array.from({length:9},()=>Array(9).fill(0)));const gen=()=>{let g=map(mode==="diagonal"?diag:mode==="anti-diagonal"?anti:one);if(mode==="one-of-each"&&Math.random()<.5)g=transpose(g);setGrid(g)};return <main className="page"><h1>Diagonal or not</h1><div className="mode-picker" aria-label="Puzzle type"><button onClick={()=>setMode("diagonal")}>Diagonal</button><button onClick={()=>setMode("anti-diagonal")}>Anti-diagonal</button><button onClick={()=>setMode("one-of-each")}>One of each</button></div><div className="rule-descriptions"><p><b>Diagonal:</b> Normal Sudoku rules apply. Digits along the indicated diagonals cannot repeat.</p><p><b>Anti-diagonal:</b> Normal Sudoku rules apply. Exactly three distinct numbers appear along each marked diagonal.</p><p><b>One-of-each:</b> Normal Sudoku rules apply. Digits along one diagonal cannot repeat, while digits along the other diagonal each appear three times. It is up to the solver to determine which diagonal follows which rule.</p></div><div className="grid-frame"><svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="0" y1="0" x2="50" y2="50"/><line x1="100" y1="100" x2="50" y2="50"/><line x1="100" y1="0" x2="50" y2="50"/><line x1="0" y1="100" x2="50" y2="50"/></svg><div className="grid" aria-label="9 by 9 sudoku grid">{grid.flatMap((r,i)=>r.map((v,j)=><div className="cell" key={i+"-"+j}>{v||""}</div>))}</div></div><button className="generate-button" onClick={gen}>Generate a grid</button></main>}

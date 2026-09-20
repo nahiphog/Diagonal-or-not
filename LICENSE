@@ -1,0 +1,13 @@
+GPL-3.0-only
+
+This project contains an adapted derivative of sudokUI's GPL-3.0 Sudoku
+rating engine, including its HoDoKu-compatible technique scores and rating
+bands. The adapted code adds the two diagonal Sudoku units.
+
+Copyright (C) 2026 AImenes and sudokUI contributors
+Copyright (C) 2026 Diagonalize My Sudoku contributors
+
+The complete GNU General Public License, version 3, applies to this project:
+https://www.gnu.org/licenses/gpl-3.0.html
+
+Source reference: https://github.com/AImenes/sudokUI

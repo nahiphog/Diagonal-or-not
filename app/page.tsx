@@ -345,37 +345,6 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     }
     if (moveMade) continue;
 
-    // Pointing and claiming apply to the two diagonal units as well as rows
-    // and columns. A digit confined to a box/line intersection may be
-    // removed from the rest of that line/box respectively.
-    for (let box = 18; box < 27 && !moveMade; box++) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
-      const bit = 1 << (digit - 1), locations = units[box].filter(cell => !values[cell] && candidates[cell] & bit);
-      const lineUnits = [
-        ...[0, 1].map(line => ({
-          unit: locations.length ? (line ? Math.floor(locations[0] / 9) : 9 + locations[0] % 9) : -1,
-          matches: (cell: number) => line ? Math.floor(cell / 9) === Math.floor(locations[0] / 9) : cell % 9 === locations[0] % 9,
-        })),
-        { unit: 27, matches: (cell: number) => cell % 10 === 0 },
-        { unit: 28, matches: (cell: number) => cell > 0 && cell < 80 && cell % 8 === 0 },
-      ];
-      for (const line of lineUnits) {
-        if (locations.length > 1 && locations.every(line.matches)) {
-          const targets = units[line.unit].filter(cell => !units[box].includes(cell) && !values[cell] && candidates[cell] & bit);
-          if (targets.length && add("Locked Candidates (Pointing)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
-        }
-      }
-    }
-    if (moveMade) continue;
-    for (const line of [...Array.from({ length: 18 }, (_, index) => index), 27, 28]) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
-      const bit = 1 << (digit - 1), locations = units[line].filter(cell => !values[cell] && candidates[cell] & bit);
-      const boxes = locations.map(cell => 18 + Math.floor(Math.floor(cell / 9) / 3) * 3 + Math.floor((cell % 9) / 3));
-      if (locations.length > 1 && new Set(boxes).size === 1) {
-        const targets = units[boxes[0]].filter(cell => !units[line].includes(cell) && !values[cell] && candidates[cell] & bit);
-        if (targets.length && add("Locked Candidates (Claiming)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
-      }
-    }
-    if (moveMade) continue;
-
     for (const size of [2, 3, 4]) for (let unitIndex = 0; unitIndex < units.length && !moveMade; unitIndex++) {
       const cells = units[unitIndex].filter(cell => !values[cell] && popcount(candidates[cell]) <= size);
       for (const group of combinations(cells, size)) {
@@ -402,6 +371,36 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
         if (cells.length === size && targets.length && add(`Hidden ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets), involved)) { moveMade = true; break; }
       }
       if (moveMade) break;
+    }
+    if (moveMade) continue;
+
+    // Pointing and claiming apply to the two diagonal units as well as rows
+    // and columns. Check them after all pairs, triples and quadruples.
+    for (let box = 18; box < 27 && !moveMade; box++) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
+      const bit = 1 << (digit - 1), locations = units[box].filter(cell => !values[cell] && candidates[cell] & bit);
+      const lineUnits = [
+        ...[0, 1].map(line => ({
+          unit: locations.length ? (line ? Math.floor(locations[0] / 9) : 9 + locations[0] % 9) : -1,
+          matches: (cell: number) => line ? Math.floor(cell / 9) === Math.floor(locations[0] / 9) : cell % 9 === locations[0] % 9,
+        })),
+        { unit: 27, matches: (cell: number) => cell % 10 === 0 },
+        { unit: 28, matches: (cell: number) => cell > 0 && cell < 80 && cell % 8 === 0 },
+      ];
+      for (const line of lineUnits) {
+        if (locations.length > 1 && locations.every(line.matches)) {
+          const targets = units[line.unit].filter(cell => !units[box].includes(cell) && !values[cell] && candidates[cell] & bit);
+          if (targets.length && add("Locked Candidates (Pointing)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
+        }
+      }
+    }
+    if (moveMade) continue;
+    for (const line of [...Array.from({ length: 18 }, (_, index) => index), 27, 28]) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
+      const bit = 1 << (digit - 1), locations = units[line].filter(cell => !values[cell] && candidates[cell] & bit);
+      const boxes = locations.map(cell => 18 + Math.floor(Math.floor(cell / 9) / 3) * 3 + Math.floor((cell % 9) / 3));
+      if (locations.length > 1 && new Set(boxes).size === 1) {
+        const targets = units[boxes[0]].filter(cell => !units[line].includes(cell) && !values[cell] && candidates[cell] & bit);
+        if (targets.length && add("Locked Candidates (Claiming)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
+      }
     }
     if (moveMade) continue;
 

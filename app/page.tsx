@@ -6,7 +6,7 @@ type Grid = number[][];
 type Mode = "diagonal" | "anti-diagonal" | "one-of-each";
 type DiggingMethod = "single" | "double";
 type CandidateRemoval = { cell: number; digit: number };
-type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; involved: CandidateRemoval[]; message: string };
+type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; involved: CandidateRemoval[]; highlightedDiagonals: number[]; message: string };
 type DifficultyRating = { rating: string; score: number; techniques: string[]; logical: boolean; walkthrough: WalkthroughStep[]; tally: Record<string, number>; givens: number[] };
 const emptyGrid = () => Array.from({ length: 9 }, () => Array(9).fill(0));
 const allDigits = 0b111111111;
@@ -328,8 +328,8 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     return items.flatMap((item, index) => combinations(items.slice(index + 1), size - 1).map(rest => [item, ...rest]));
   };
   const cellName = (cell: number) => `R${Math.floor(cell / 9) + 1}C${cell % 9 + 1}`;
-  const unitName = (unit: number) => unit < 9 ? `row ${unit + 1}` : unit < 18 ? `column ${unit - 8}` : unit < 27 ? `the ${Math.floor((unit - 18) / 3) + 1}${["st", "nd", "rd"][((unit - 18) % 3)] ?? "th"} 3×3 box` : unit === 27 ? "the main diagonal" : "the anti-diagonal";
-  const add = (name: string, action: () => void, involved: CandidateRemoval[] = [], explanation?: string) => {
+  const unitName = (unit: number) => unit < 9 ? `row ${unit + 1}` : unit < 18 ? `column ${unit - 8}` : unit < 27 ? `the ${Math.floor((unit - 18) / 3) + 1}${["st", "nd", "rd"][((unit - 18) % 3)] ?? "th"} 3×3 box` : unit === 27 ? "the diagonal from R1C1 to R9C9" : "the diagonal from R1C9 to R9C1";
+  const add = (name: string, action: () => void, involved: CandidateRemoval[] = [], explanation?: string, highlightedDiagonals: number[] = []) => {
     const beforeValues = [...values];
     const beforeCandidates = [...candidates];
     action();
@@ -359,7 +359,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     const message = explanation ?? defaultMessage;
     if (!placed.length && !removed.length) return false;
     steps.push(name);
-    walkthrough.push({ technique: name, values: [...values], candidates: [...candidates], affectedCells, placedCells: placed, removed, involved: uniqueInvolved, message });
+    walkthrough.push({ technique: name, values: [...values], candidates: [...candidates], affectedCells, placedCells: placed, removed, involved: uniqueInvolved, highlightedDiagonals, message });
     return true;
   };
 
@@ -371,6 +371,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     placedCells: [],
     removed: [],
     involved: [],
+    highlightedDiagonals: [],
     message: "Starting board with all available Snyder notations.",
   });
 
@@ -443,7 +444,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
       for (const line of lineUnits) if (locations.length > 1 && locations.every(line.matches)) {
         const targets = units[line.unit].filter(cell => !units[box].includes(cell) && !values[cell] && candidates[cell] & bit);
         const explanation = `In ${unitName(box)}, the green ${digit}s can occur only at ${locations.map(cellName).join(", ")}. All of those positions lie on ${unitName(line.unit)}, so the ${digit} for this box must be on that line. The red ${digit}s outside the box are therefore impossible and are removed.`;
-        if (targets.length && add("Locked Candidates (Pointing)", () => eliminate(targets.map(cell => [cell, digit])), locations.map(cell => ({ cell, digit })), explanation)) moveMade = true;
+        if (targets.length && add("Locked Candidates (Pointing)", () => eliminate(targets.map(cell => [cell, digit])), locations.map(cell => ({ cell, digit })), explanation, line.unit >= 27 ? [line.unit] : [])) moveMade = true;
       }
     }
     if (moveMade) continue;
@@ -453,7 +454,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
       if (locations.length > 1 && new Set(boxes).size === 1) {
         const targets = units[boxes[0]].filter(cell => !units[line].includes(cell) && !values[cell] && candidates[cell] & bit);
         const explanation = `On ${unitName(line)}, the green ${digit}s can occur only at ${locations.map(cellName).join(", ")}, all inside ${unitName(boxes[0])}. Therefore ${digit} must occupy that box through this line, making the red ${digit}s elsewhere in the box impossible.`;
-        if (targets.length && add("Locked Candidates (Claiming)", () => eliminate(targets.map(cell => [cell, digit])), locations.map(cell => ({ cell, digit })), explanation)) moveMade = true;
+        if (targets.length && add("Locked Candidates (Claiming)", () => eliminate(targets.map(cell => [cell, digit])), locations.map(cell => ({ cell, digit })), explanation, line >= 27 ? [line] : [])) moveMade = true;
       }
     }
     if (moveMade) continue;
@@ -469,8 +470,8 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
       // this deduction. The walkthrough renders them in green, while the
       // same digit in the peer-intersection targets is struck through red.
       const involved = locations.map(cell => ({ cell, digit }));
-      const explanation = `On ${unitName(diagonal)}, the green ${digit}s at ${locations.map(cellName).join(" and ")} are the only two possible places for ${digit}. Every red ${digit} sees both green candidates through its row, column, box, or the other diagonal. If any red ${digit} were true, it would eliminate both green candidates and leave no place for ${digit} on ${unitName(diagonal)}. The red ${digit}s are therefore removed.`;
-      if (targets.length && add("Locked Candidates (Diagonal)", () => eliminate(targets.map(cell => [cell, digit])), involved, explanation)) moveMade = true;
+      const explanation = `On ${unitName(diagonal)}, the green ${digit}s at ${locations.map(cellName).join(" and ")} are the only two possible places for ${digit}. Every red ${digit} shares a Sudoku unit with both green candidates. If any red ${digit} were true, it would eliminate both green candidates and leave no place for ${digit} on ${unitName(diagonal)}. The red ${digit}s are therefore removed.`;
+      if (targets.length && add("Locked Candidates (Diagonal)", () => eliminate(targets.map(cell => [cell, digit])), involved, explanation, [diagonal])) moveMade = true;
     }
     if (moveMade) continue;
 
@@ -722,8 +723,8 @@ export default function Home() {
             <div className="walkthrough-layout">
               <div className="grid-frame walkthrough-frame">
                 <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                  <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
-                  <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
+                  <line className={step.highlightedDiagonals.includes(27) ? "diagonal-active" : ""} x1="0" y1="0" x2="50" y2="50" /><line className={step.highlightedDiagonals.includes(27) ? "diagonal-active" : ""} x1="100" y1="100" x2="50" y2="50" />
+                  <line className={step.highlightedDiagonals.includes(28) ? "diagonal-active" : ""} x1="100" y1="0" x2="50" y2="50" /><line className={step.highlightedDiagonals.includes(28) ? "diagonal-active" : ""} x1="0" y1="100" x2="50" y2="50" />
                 </svg>
                 <div className="grid walkthrough-grid" aria-label={`Board after ${step.technique}`}>
                   {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""}`} key={cell}>

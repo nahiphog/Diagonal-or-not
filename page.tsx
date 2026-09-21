@@ -29,6 +29,9 @@ const sudokUiTechniqueDifficulty: Record<string, number> = {
   "Hidden Quadruple": 150,
   "Swordfish": 150,
   "Jellyfish": 160,
+  "W-Wing": 150,
+  "XY-Wing": 160,
+  "XYZ-Wing": 180,
   "Brute Force": 10000,
 };
 const antiDiagonalTemplate = [
@@ -324,7 +327,9 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     if (items.length < size) return [];
     return items.flatMap((item, index) => combinations(items.slice(index + 1), size - 1).map(rest => [item, ...rest]));
   };
-  const add = (name: string, action: () => void, involved: CandidateRemoval[] = []) => {
+  const cellName = (cell: number) => `R${Math.floor(cell / 9) + 1}C${cell % 9 + 1}`;
+  const unitName = (unit: number) => unit < 9 ? `row ${unit + 1}` : unit < 18 ? `column ${unit - 8}` : unit < 27 ? `the ${Math.floor((unit - 18) / 3) + 1}${["st", "nd", "rd"][((unit - 18) % 3)] ?? "th"} 3×3 box` : unit === 27 ? "the main diagonal" : "the anti-diagonal";
+  const add = (name: string, action: () => void, involved: CandidateRemoval[] = [], explanation?: string) => {
     const beforeValues = [...values];
     const beforeCandidates = [...candidates];
     action();
@@ -348,9 +353,10 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
       : `Eliminated candidates in ${removedNames.join(", ")}.`;
     const involvedDigits = [...new Set(uniqueInvolved.map(item => item.digit))];
     const involvedCells = [...new Set(uniqueInvolved.map(item => `R${Math.floor(item.cell / 9) + 1}C${item.cell % 9 + 1}`))];
-    const message = uniqueInvolved.length
+    const defaultMessage = uniqueInvolved.length
       ? `${baseMessage} Highlighted digits ${involvedDigits.join(", ")} are the ${name.toLowerCase()} set in ${involvedCells.join(", ")}.`
       : baseMessage;
+    const message = explanation ?? defaultMessage;
     if (!placed.length && !removed.length) return false;
     steps.push(name);
     walkthrough.push({ technique: name, values: [...values], candidates: [...candidates], affectedCells, placedCells: placed, removed, involved: uniqueInvolved, message });
@@ -431,7 +437,8 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
       ];
       for (const line of lineUnits) if (locations.length > 1 && locations.every(line.matches)) {
         const targets = units[line.unit].filter(cell => !units[box].includes(cell) && !values[cell] && candidates[cell] & bit);
-        if (targets.length && add("Locked Candidates (Pointing)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
+        const explanation = `In ${unitName(box)}, the green ${digit}s can occur only at ${locations.map(cellName).join(", ")}. All of those positions lie on ${unitName(line.unit)}, so the ${digit} for this box must be on that line. The red ${digit}s outside the box are therefore impossible and are removed.`;
+        if (targets.length && add("Locked Candidates (Pointing)", () => eliminate(targets.map(cell => [cell, digit])), locations.map(cell => ({ cell, digit })), explanation)) moveMade = true;
       }
     }
     if (moveMade) continue;
@@ -440,7 +447,8 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
       const boxes = locations.map(cell => 18 + Math.floor(Math.floor(cell / 9) / 3) * 3 + Math.floor((cell % 9) / 3));
       if (locations.length > 1 && new Set(boxes).size === 1) {
         const targets = units[boxes[0]].filter(cell => !units[line].includes(cell) && !values[cell] && candidates[cell] & bit);
-        if (targets.length && add("Locked Candidates (Claiming)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
+        const explanation = `On ${unitName(line)}, the green ${digit}s can occur only at ${locations.map(cellName).join(", ")}, all inside ${unitName(boxes[0])}. Therefore ${digit} must occupy that box through this line, making the red ${digit}s elsewhere in the box impossible.`;
+        if (targets.length && add("Locked Candidates (Claiming)", () => eliminate(targets.map(cell => [cell, digit])), locations.map(cell => ({ cell, digit })), explanation)) moveMade = true;
       }
     }
     if (moveMade) continue;
@@ -456,7 +464,69 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
       // this deduction. The walkthrough renders them in green, while the
       // same digit in the peer-intersection targets is struck through red.
       const involved = locations.map(cell => ({ cell, digit }));
-      if (targets.length && add("Locked Candidates (Diagonal)", () => eliminate(targets.map(cell => [cell, digit])), involved)) moveMade = true;
+      const explanation = `On ${unitName(diagonal)}, the green ${digit}s at ${locations.map(cellName).join(" and ")} are the only two possible places for ${digit}. Every red ${digit} sees both green candidates through its row, column, box, or the other diagonal. If any red ${digit} were true, it would eliminate both green candidates and leave no place for ${digit} on ${unitName(diagonal)}. The red ${digit}s are therefore removed.`;
+      if (targets.length && add("Locked Candidates (Diagonal)", () => eliminate(targets.map(cell => [cell, digit])), involved, explanation)) moveMade = true;
+    }
+    if (moveMade) continue;
+
+    // Wings from sudokUI's `wings.ts`. They use this solver's peer graph, so
+    // a diagonal is naturally a valid link whenever its cells see each other.
+    const bivalues = values.map((value, cell) => !value && popcount(candidates[cell]) === 2 ? cell : -1).filter(cell => cell >= 0);
+    for (const pivot of bivalues) {
+      const [x, y] = digits(candidates[pivot]);
+      const wingCells = bivalues.filter(cell => cell !== pivot && peers[pivot].includes(cell));
+      for (const firstWing of wingCells) {
+        if (!(candidates[firstWing] & (1 << (x - 1))) || candidates[firstWing] === candidates[pivot]) continue;
+        const z = digits(candidates[firstWing]).find(digit => digit !== x)!;
+        if (z === y) continue;
+        for (const secondWing of wingCells) {
+          if (secondWing === firstWing || candidates[secondWing] !== ((1 << (y - 1)) | (1 << (z - 1)))) continue;
+          const firstPeers = new Set(peers[firstWing]);
+          const targets = peers[secondWing].filter(cell => firstPeers.has(cell) && !values[cell] && candidates[cell] & (1 << (z - 1)));
+          const involved = [pivot, firstWing, secondWing].flatMap(cell => digits(candidates[cell]).map(digit => ({ cell, digit })));
+          if (targets.length && add("XY-Wing", () => eliminate(targets.map(cell => [cell, z])), involved)) { moveMade = true; break; }
+        }
+        if (moveMade) break;
+      }
+      if (moveMade) break;
+    }
+    if (moveMade) continue;
+    for (let pivot = 0; pivot < 81 && !moveMade; pivot++) {
+      if (values[pivot] || popcount(candidates[pivot]) !== 3) continue;
+      const pivotMask = candidates[pivot];
+      const wingCells = peers[pivot].filter(cell => !values[cell] && popcount(candidates[cell]) === 2 && (candidates[cell] & pivotMask) === candidates[cell]);
+      for (const firstWing of wingCells) for (const secondWing of wingCells) {
+        if (secondWing <= firstWing) continue;
+        const shared = candidates[firstWing] & candidates[secondWing];
+        if (popcount(shared) !== 1 || (candidates[firstWing] | candidates[secondWing]) !== pivotMask) continue;
+        const z = digits(shared)[0];
+        const firstPeers = new Set(peers[firstWing]);
+        const targets = peers[secondWing].filter(cell => cell !== pivot && peers[pivot].includes(cell) && firstPeers.has(cell) && !values[cell] && candidates[cell] & (1 << (z - 1)));
+        const involved = [pivot, firstWing, secondWing].flatMap(cell => digits(candidates[cell]).map(digit => ({ cell, digit })));
+        if (targets.length && add("XYZ-Wing", () => eliminate(targets.map(cell => [cell, z])), involved)) moveMade = true;
+        if (moveMade) break;
+      }
+    }
+    if (moveMade) continue;
+    for (let firstIndex = 0; firstIndex < bivalues.length && !moveMade; firstIndex++) for (let secondIndex = firstIndex + 1; secondIndex < bivalues.length && !moveMade; secondIndex++) {
+      const first = bivalues[firstIndex], second = bivalues[secondIndex];
+      if (candidates[first] !== candidates[second] || peers[first].includes(second)) continue;
+      const [x, y] = digits(candidates[first]);
+      for (const [linkDigit, eliminationDigit] of [[x, y], [y, x]]) {
+        const bit = 1 << (linkDigit - 1);
+        for (const unit of units) {
+          const locations = unit.filter(cell => !values[cell] && candidates[cell] & bit);
+          if (locations.length !== 2 || locations.includes(first) || locations.includes(second)) continue;
+          const [linkA, linkB] = locations;
+          const connects = (peers[linkA].includes(first) && peers[linkB].includes(second)) || (peers[linkA].includes(second) && peers[linkB].includes(first));
+          if (!connects) continue;
+          const firstPeers = new Set(peers[first]);
+          const targets = peers[second].filter(cell => firstPeers.has(cell) && !values[cell] && candidates[cell] & (1 << (eliminationDigit - 1)) && !locations.includes(cell));
+          const involved = [{ cell: first, digit: eliminationDigit }, { cell: second, digit: eliminationDigit }, { cell: linkA, digit: linkDigit }, { cell: linkB, digit: linkDigit }];
+          if (targets.length && add("W-Wing", () => eliminate(targets.map(cell => [cell, eliminationDigit])), involved)) { moveMade = true; break; }
+        }
+        if (moveMade) break;
+      }
     }
     if (moveMade) continue;
 
@@ -499,7 +569,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
   }
 
   const scores = sudokUiTechniqueDifficulty;
-  const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Locked Candidates (Pointing)": "Medium", "Locked Candidates (Claiming)": "Medium", "Locked Candidates (Diagonal)": "Medium", "Naked Pair": "Medium", "Naked Triple": "Medium", "Hidden Pair": "Medium", "Hidden Triple": "Medium", "Naked Quadruple": "Hard", "Hidden Quadruple": "Hard", "X-Wing": "Hard", "Swordfish": "Hard", "Jellyfish": "Hard", "Brute Force": "Extreme" };
+  const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Locked Candidates (Pointing)": "Medium", "Locked Candidates (Claiming)": "Medium", "Locked Candidates (Diagonal)": "Medium", "Naked Pair": "Medium", "Naked Triple": "Medium", "Hidden Pair": "Medium", "Hidden Triple": "Medium", "Naked Quadruple": "Hard", "Hidden Quadruple": "Hard", "X-Wing": "Hard", "Swordfish": "Hard", "Jellyfish": "Hard", "W-Wing": "Hard", "XY-Wing": "Hard", "XYZ-Wing": "Hard", "Brute Force": "Extreme" };
   const order = ["Beginner", "Easy", "Medium", "Tricky", "Hard", "Unfair", "Extreme", "Nightmare"];
   const maxScore: Record<string, number> = { Beginner: 400, Easy: 800, Medium: 1000, Tricky: 1150, Hard: 1600, Unfair: 1800, Extreme: 3000, Nightmare: Number.MAX_SAFE_INTEGER };
   const score = steps.reduce((total, step) => total + scores[step], 0);

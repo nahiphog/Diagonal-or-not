@@ -470,6 +470,7 @@ export default function Home() {
   const [diggingMethod, setDiggingMethod] = useState<DiggingMethod>("double");
   const [difficulty, setDifficulty] = useState<DifficultyRating | null>(null);
   const [walkthroughIndex, setWalkthroughIndex] = useState(0);
+  const [copiedGrid, setCopiedGrid] = useState<"puzzle" | "solution" | null>(null);
   const generate = () => {
     const started = performance.now();
     if (mode === "diagonal") {
@@ -478,9 +479,15 @@ export default function Home() {
       setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution));
     } else { setGrid(generateGrid(mode)); setSolution(null); setDifficulty(null); }
     setWalkthroughIndex(0);
+    setCopiedGrid(null);
     setElapsed(performance.now() - started);
   };
-  const selectMode = (nextMode: Mode) => { setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); };
+  const selectMode = (nextMode: Mode) => { setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
+  const copyGrid = async (board: Grid, kind: "puzzle" | "solution") => {
+    // Keep the export at exactly 81 characters; zero represents an empty cell.
+    await navigator.clipboard.writeText(board.flat().map(value => value || 0).join(""));
+    setCopiedGrid(kind);
+  };
   const descriptions: Record<Mode, string> = {
     diagonal: "Normal Sudoku rules apply. Digits along the indicated diagonals cannot repeat.",
     "anti-diagonal": "Normal Sudoku rules apply. Exactly three distinct numbers appear along each marked diagonal.",
@@ -506,6 +513,13 @@ export default function Home() {
           {grid.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}
         </div>
       </div>
+      <button
+        className="copy-grid-button"
+        onClick={() => copyGrid(grid, "puzzle")}
+        disabled={!grid.flat().some(Boolean)}
+      >
+        {copiedGrid === "puzzle" ? "Copied 81 cells" : "Copy 81-cell grid"}
+      </button>
       <label className="digging-method">
         Digging method:
         <select value={diggingMethod} onChange={event => setDiggingMethod(event.target.value as DiggingMethod)}>
@@ -570,6 +584,9 @@ export default function Home() {
         <div className="grid solution-grid" aria-label="Completed sudoku grid">
           {solution.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className={grid[rowIndex][columnIndex] ? "cell given" : "cell solved"} key={`${rowIndex}-${columnIndex}`}>{value}</div>))}
         </div>
+        <button className="copy-grid-button" onClick={() => copyGrid(solution, "solution")}>
+          {copiedGrid === "solution" ? "Copied final grid" : "Copy final grid"}
+        </button>
       </section>}
     </main>
   );

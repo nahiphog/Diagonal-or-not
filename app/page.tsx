@@ -394,30 +394,35 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     }
     if (moveMade) continue;
 
-    for (const size of [2, 3, 4]) for (let unitIndex = 0; unitIndex < units.length && !moveMade; unitIndex++) {
-      const cells = units[unitIndex].filter(cell => !values[cell] && popcount(candidates[cell]) <= size);
-      for (const group of combinations(cells, size)) {
-        const mask = group.reduce((total, cell) => total | candidates[cell], 0);
-        if (popcount(mask) !== size) continue;
-        const targets = units[unitIndex].filter(cell => !group.includes(cell) && !values[cell]).flatMap(cell => digits(candidates[cell] & mask).map(digit => [cell, digit] as [number, number]));
-        const involved = group.flatMap(cell => digits(candidates[cell] & mask).map(digit => ({ cell, digit })));
-        if (targets.length && add(`Naked ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets), involved)) { moveMade = true; break; }
+    // Try both forms of each subset size before moving to a larger subset.
+    // In particular, a hidden pair is preferred over any triple/quadruple.
+    for (const size of [2, 3, 4]) {
+      for (let unitIndex = 0; unitIndex < units.length && !moveMade; unitIndex++) {
+        const cells = units[unitIndex].filter(cell => !values[cell] && popcount(candidates[cell]) <= size);
+        for (const group of combinations(cells, size)) {
+          const mask = group.reduce((total, cell) => total | candidates[cell], 0);
+          if (popcount(mask) !== size) continue;
+          const targets = units[unitIndex].filter(cell => !group.includes(cell) && !values[cell]).flatMap(cell => digits(candidates[cell] & mask).map(digit => [cell, digit] as [number, number]));
+          const involved = group.flatMap(cell => digits(candidates[cell] & mask).map(digit => ({ cell, digit })));
+          if (targets.length && add(`Naked ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets), involved)) { moveMade = true; break; }
+        }
       }
-    }
-    if (moveMade) continue;
-    for (const size of [2, 3, 4]) for (const unit of units) {
-      const empty = unit.filter(cell => !values[cell]);
-      const missingDigits = Array.from({ length: 9 }, (_, index) => index + 1).filter(digit => !unit.some(cell => values[cell] === digit));
-      for (const digitGroup of combinations(missingDigits, size)) {
-        const mask = digitGroup.reduce((total, digit) => total | (1 << (digit - 1)), 0);
-        // A hidden set is only valid when every selected, still-missing digit
-        // occurs in at least one candidate cell. Without this guard, a digit
-        // already placed in the unit can create a phantom pair/triple/quad.
-        if (digitGroup.some(digit => !empty.some(cell => candidates[cell] & (1 << (digit - 1))))) continue;
-        const cells = empty.filter(cell => candidates[cell] & mask);
-        const targets = cells.flatMap(cell => digits(candidates[cell] & ~mask).map(digit => [cell, digit] as [number, number]));
-        const involved = cells.flatMap(cell => digitGroup.filter(digit => candidates[cell] & (1 << (digit - 1))).map(digit => ({ cell, digit })));
-        if (cells.length === size && targets.length && add(`Hidden ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets), involved)) { moveMade = true; break; }
+      if (moveMade) break;
+      for (const unit of units) {
+        const empty = unit.filter(cell => !values[cell]);
+        const missingDigits = Array.from({ length: 9 }, (_, index) => index + 1).filter(digit => !unit.some(cell => values[cell] === digit));
+        for (const digitGroup of combinations(missingDigits, size)) {
+          const mask = digitGroup.reduce((total, digit) => total | (1 << (digit - 1)), 0);
+          // A hidden set is only valid when every selected, still-missing digit
+          // occurs in at least one candidate cell. Without this guard, a digit
+          // already placed in the unit can create a phantom pair/triple/quad.
+          if (digitGroup.some(digit => !empty.some(cell => candidates[cell] & (1 << (digit - 1))))) continue;
+          const cells = empty.filter(cell => candidates[cell] & mask);
+          const targets = cells.flatMap(cell => digits(candidates[cell] & ~mask).map(digit => [cell, digit] as [number, number]));
+          const involved = cells.flatMap(cell => digitGroup.filter(digit => candidates[cell] & (1 << (digit - 1))).map(digit => ({ cell, digit })));
+          if (cells.length === size && targets.length && add(`Hidden ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets), involved)) { moveMade = true; break; }
+        }
+        if (moveMade) break;
       }
       if (moveMade) break;
     }

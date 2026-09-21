@@ -33,8 +33,8 @@ h1 { margin: 0 0 2rem; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; lett
 .technique-tally table { width: 100%; border-collapse: collapse; background: #fff; font-size: 0.9rem; }
 .technique-tally th, .technique-tally td { border: 1px solid #d1d5db; padding: 0.55rem 0.65rem; text-align: left; }
 .technique-tally th { background: #eff6ff; color: #1e3a8a; }
-.technique-tally th:first-child, .technique-tally td:first-child { width: 34%; }
-.technique-tally th:last-child, .technique-tally td:last-child { width: 66%; text-align: left; font-weight: 700; }
+.technique-tally th:first-child, .technique-tally td:first-child { width: 25%; }
+.technique-tally th:last-child, .technique-tally td:last-child { width: 75%; text-align: left; font-weight: 700; }
 .walkthrough { margin: 2rem 0; padding: 1.25rem; border: 1px solid #bfdbfe; border-radius: 0.7rem; background: #f8fbff; }
 .walkthrough h2 { margin-top: 0; }
 .walkthrough-step { font-size: 0.92rem; }

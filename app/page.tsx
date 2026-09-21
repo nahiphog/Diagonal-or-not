@@ -29,6 +29,9 @@ const sudokUiTechniqueDifficulty: Record<string, number> = {
   "Hidden Quadruple": 150,
   "Swordfish": 150,
   "Jellyfish": 160,
+  "W-Wing": 150,
+  "XY-Wing": 160,
+  "XYZ-Wing": 180,
   "Brute Force": 10000,
 };
 const antiDiagonalTemplate = [
@@ -460,6 +463,67 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     }
     if (moveMade) continue;
 
+    // Wings from sudokUI's `wings.ts`. They use this solver's peer graph, so
+    // a diagonal is naturally a valid link whenever its cells see each other.
+    const bivalues = values.map((value, cell) => !value && popcount(candidates[cell]) === 2 ? cell : -1).filter(cell => cell >= 0);
+    for (const pivot of bivalues) {
+      const [x, y] = digits(candidates[pivot]);
+      const wingCells = bivalues.filter(cell => cell !== pivot && peers[pivot].includes(cell));
+      for (const firstWing of wingCells) {
+        if (!(candidates[firstWing] & (1 << (x - 1))) || candidates[firstWing] === candidates[pivot]) continue;
+        const z = digits(candidates[firstWing]).find(digit => digit !== x)!;
+        if (z === y) continue;
+        for (const secondWing of wingCells) {
+          if (secondWing === firstWing || candidates[secondWing] !== ((1 << (y - 1)) | (1 << (z - 1)))) continue;
+          const firstPeers = new Set(peers[firstWing]);
+          const targets = peers[secondWing].filter(cell => firstPeers.has(cell) && !values[cell] && candidates[cell] & (1 << (z - 1)));
+          const involved = [pivot, firstWing, secondWing].flatMap(cell => digits(candidates[cell]).map(digit => ({ cell, digit })));
+          if (targets.length && add("XY-Wing", () => eliminate(targets.map(cell => [cell, z])), involved)) { moveMade = true; break; }
+        }
+        if (moveMade) break;
+      }
+      if (moveMade) break;
+    }
+    if (moveMade) continue;
+    for (let pivot = 0; pivot < 81 && !moveMade; pivot++) {
+      if (values[pivot] || popcount(candidates[pivot]) !== 3) continue;
+      const pivotMask = candidates[pivot];
+      const wingCells = peers[pivot].filter(cell => !values[cell] && popcount(candidates[cell]) === 2 && (candidates[cell] & pivotMask) === candidates[cell]);
+      for (const firstWing of wingCells) for (const secondWing of wingCells) {
+        if (secondWing <= firstWing) continue;
+        const shared = candidates[firstWing] & candidates[secondWing];
+        if (popcount(shared) !== 1 || (candidates[firstWing] | candidates[secondWing]) !== pivotMask) continue;
+        const z = digits(shared)[0];
+        const firstPeers = new Set(peers[firstWing]);
+        const targets = peers[secondWing].filter(cell => cell !== pivot && peers[pivot].includes(cell) && firstPeers.has(cell) && !values[cell] && candidates[cell] & (1 << (z - 1)));
+        const involved = [pivot, firstWing, secondWing].flatMap(cell => digits(candidates[cell]).map(digit => ({ cell, digit })));
+        if (targets.length && add("XYZ-Wing", () => eliminate(targets.map(cell => [cell, z])), involved)) moveMade = true;
+        if (moveMade) break;
+      }
+    }
+    if (moveMade) continue;
+    for (let firstIndex = 0; firstIndex < bivalues.length && !moveMade; firstIndex++) for (let secondIndex = firstIndex + 1; secondIndex < bivalues.length && !moveMade; secondIndex++) {
+      const first = bivalues[firstIndex], second = bivalues[secondIndex];
+      if (candidates[first] !== candidates[second] || peers[first].includes(second)) continue;
+      const [x, y] = digits(candidates[first]);
+      for (const [linkDigit, eliminationDigit] of [[x, y], [y, x]]) {
+        const bit = 1 << (linkDigit - 1);
+        for (const unit of units) {
+          const locations = unit.filter(cell => !values[cell] && candidates[cell] & bit);
+          if (locations.length !== 2 || locations.includes(first) || locations.includes(second)) continue;
+          const [linkA, linkB] = locations;
+          const connects = (peers[linkA].includes(first) && peers[linkB].includes(second)) || (peers[linkA].includes(second) && peers[linkB].includes(first));
+          if (!connects) continue;
+          const firstPeers = new Set(peers[first]);
+          const targets = peers[second].filter(cell => firstPeers.has(cell) && !values[cell] && candidates[cell] & (1 << (eliminationDigit - 1)) && !locations.includes(cell));
+          const involved = [{ cell: first, digit: eliminationDigit }, { cell: second, digit: eliminationDigit }, { cell: linkA, digit: linkDigit }, { cell: linkB, digit: linkDigit }];
+          if (targets.length && add("W-Wing", () => eliminate(targets.map(cell => [cell, eliminationDigit])), involved)) { moveMade = true; break; }
+        }
+        if (moveMade) break;
+      }
+    }
+    if (moveMade) continue;
+
     // Basic fish (X-Wing, Swordfish and Jellyfish) from sudokUI's solve order.
     for (const size of [2, 3, 4]) for (let digit = 1; digit <= 9 && !moveMade; digit++) for (const byRows of [true, false]) {
       const bit = 1 << (digit - 1);
@@ -499,7 +563,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
   }
 
   const scores = sudokUiTechniqueDifficulty;
-  const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Locked Candidates (Pointing)": "Medium", "Locked Candidates (Claiming)": "Medium", "Locked Candidates (Diagonal)": "Medium", "Naked Pair": "Medium", "Naked Triple": "Medium", "Hidden Pair": "Medium", "Hidden Triple": "Medium", "Naked Quadruple": "Hard", "Hidden Quadruple": "Hard", "X-Wing": "Hard", "Swordfish": "Hard", "Jellyfish": "Hard", "Brute Force": "Extreme" };
+  const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Locked Candidates (Pointing)": "Medium", "Locked Candidates (Claiming)": "Medium", "Locked Candidates (Diagonal)": "Medium", "Naked Pair": "Medium", "Naked Triple": "Medium", "Hidden Pair": "Medium", "Hidden Triple": "Medium", "Naked Quadruple": "Hard", "Hidden Quadruple": "Hard", "X-Wing": "Hard", "Swordfish": "Hard", "Jellyfish": "Hard", "W-Wing": "Hard", "XY-Wing": "Hard", "XYZ-Wing": "Hard", "Brute Force": "Extreme" };
   const order = ["Beginner", "Easy", "Medium", "Tricky", "Hard", "Unfair", "Extreme", "Nightmare"];
   const maxScore: Record<string, number> = { Beginner: 400, Easy: 800, Medium: 1000, Tricky: 1150, Hard: 1600, Unfair: 1800, Extreme: 3000, Nightmare: Number.MAX_SAFE_INTEGER };
   const score = steps.reduce((total, step) => total + scores[step], 0);

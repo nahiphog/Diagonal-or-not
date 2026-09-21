@@ -23,6 +23,10 @@ h1 { margin: 0 0 2rem; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; lett
 .copy-grid-button { margin-top: 0.85rem; border: 1px solid #1d4ed8; border-radius: 0.45rem; padding: 0.55rem 0.8rem; background: #fff; color: #1d4ed8; font: inherit; font-size: 0.9rem; font-weight: 700; cursor: pointer; }
 .copy-grid-button:hover:not(:disabled) { background: #eff6ff; }
 .copy-grid-button:disabled { border-color: #9ca3af; color: #9ca3af; cursor: not-allowed; }
+.puzzle-loader { display: grid; width: min(82vw, 540px); gap: 0.5rem; margin-top: 1.25rem; font-weight: 600; }
+.puzzle-loader textarea { width: 100%; resize: vertical; border: 1px solid #9ca3af; border-radius: 0.4rem; padding: 0.55rem 0.65rem; color: #111827; font: 0.9rem/1.35 monospace; }
+.puzzle-loader .copy-grid-button { justify-self: start; margin-top: 0; }
+.puzzle-loader p { margin: 0; color: #b91c1c; font-size: 0.85rem; }
 .digging-method { display: flex; align-items: center; gap: 0.6rem; margin-top: 1.5rem; font-weight: 600; }
 .digging-method select { border: 1px solid #9ca3af; border-radius: 0.4rem; padding: 0.5rem 0.65rem; background: #fff; color: #111827; font: inherit; }
 .generate-button:hover { background: #374151; }

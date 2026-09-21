@@ -19,6 +19,7 @@ const sudokUiTechniqueDifficulty: Record<string, number> = {
   "Hidden Single": 14,
   "Locked Candidates (Pointing)": 50,
   "Locked Candidates (Claiming)": 50,
+  "Locked Candidates (Diagonal)": 50,
   "Naked Pair": 60,
   "Hidden Pair": 70,
   "Naked Triple": 80,
@@ -231,6 +232,48 @@ function countDiagonalSolutions(startGrid: Grid, limit = 2) {
   return search();
 }
 
+function solveDiagonalGrid(startGrid: Grid): Grid | null {
+  const grid = startGrid.map(row => [...row]);
+  const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0), diagonals = [0, 0];
+  for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) {
+    const digit = grid[row][column];
+    if (!digit) continue;
+    const bit = 1 << (digit - 1), house = Math.floor(row / 3) * 3 + Math.floor(column / 3);
+    let used = rows[row] | columns[column] | houses[house];
+    if (row === column) used |= diagonals[0];
+    if (row + column === 8) used |= diagonals[1];
+    if (digit < 1 || digit > 9 || used & bit) return null;
+    rows[row] |= bit; columns[column] |= bit; houses[house] |= bit;
+    if (row === column) diagonals[0] |= bit;
+    if (row + column === 8) diagonals[1] |= bit;
+  }
+  const search = (): boolean => {
+    let bestRow = -1, bestColumn = -1, bestChoices = 0, fewest = 10;
+    for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) if (!grid[row][column]) {
+      const house = Math.floor(row / 3) * 3 + Math.floor(column / 3);
+      let used = rows[row] | columns[column] | houses[house];
+      if (row === column) used |= diagonals[0];
+      if (row + column === 8) used |= diagonals[1];
+      const choices = allDigits & ~used, count = bitCount(choices);
+      if (!count) return false;
+      if (count < fewest) { bestRow = row; bestColumn = column; bestChoices = choices; fewest = count; }
+    }
+    if (bestRow < 0) return true;
+    for (let digit = 1; digit <= 9; digit++) if (bestChoices & (1 << (digit - 1))) {
+      const bit = 1 << (digit - 1), house = Math.floor(bestRow / 3) * 3 + Math.floor(bestColumn / 3);
+      grid[bestRow][bestColumn] = digit; rows[bestRow] |= bit; columns[bestColumn] |= bit; houses[house] |= bit;
+      if (bestRow === bestColumn) diagonals[0] |= bit;
+      if (bestRow + bestColumn === 8) diagonals[1] |= bit;
+      if (search()) return true;
+      grid[bestRow][bestColumn] = 0; rows[bestRow] ^= bit; columns[bestColumn] ^= bit; houses[house] ^= bit;
+      if (bestRow === bestColumn) diagonals[0] ^= bit;
+      if (bestRow + bestColumn === 8) diagonals[1] ^= bit;
+    }
+    return false;
+  };
+  return search() ? grid : null;
+}
+
 // This is a GPL-3.0 adaptation of sudokUI's board/rating approach.
 // Source: https://github.com/AImenes/sudokUI (board.ts, ratings.ts and its
 // human solver).  It adds the two X-Sudoku units to the board model.  As in
@@ -404,6 +447,17 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     }
     if (moveMade) continue;
 
+    // When a digit has exactly two possible cells on a diagonal, any cell
+    // seeing both of them cannot contain that digit.
+    for (const diagonal of [27, 28]) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
+      const bit = 1 << (digit - 1), locations = units[diagonal].filter(cell => !values[cell] && candidates[cell] & bit);
+      if (locations.length !== 2) continue;
+      const firstPeers = new Set(peers[locations[0]]);
+      const targets = peers[locations[1]].filter(cell => firstPeers.has(cell) && !values[cell] && candidates[cell] & bit);
+      if (targets.length && add("Locked Candidates (Diagonal)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
+    }
+    if (moveMade) continue;
+
     // Basic fish (X-Wing, Swordfish and Jellyfish) from sudokUI's solve order.
     for (const size of [2, 3, 4]) for (let digit = 1; digit <= 9 && !moveMade; digit++) for (const byRows of [true, false]) {
       const bit = 1 << (digit - 1);
@@ -443,7 +497,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
   }
 
   const scores = sudokUiTechniqueDifficulty;
-  const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Locked Candidates (Pointing)": "Medium", "Locked Candidates (Claiming)": "Medium", "Naked Pair": "Medium", "Naked Triple": "Medium", "Hidden Pair": "Medium", "Hidden Triple": "Medium", "Naked Quadruple": "Hard", "Hidden Quadruple": "Hard", "X-Wing": "Hard", "Swordfish": "Hard", "Jellyfish": "Hard", "Brute Force": "Extreme" };
+  const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Locked Candidates (Pointing)": "Medium", "Locked Candidates (Claiming)": "Medium", "Locked Candidates (Diagonal)": "Medium", "Naked Pair": "Medium", "Naked Triple": "Medium", "Hidden Pair": "Medium", "Hidden Triple": "Medium", "Naked Quadruple": "Hard", "Hidden Quadruple": "Hard", "X-Wing": "Hard", "Swordfish": "Hard", "Jellyfish": "Hard", "Brute Force": "Extreme" };
   const order = ["Beginner", "Easy", "Medium", "Tricky", "Hard", "Unfair", "Extreme", "Nightmare"];
   const maxScore: Record<string, number> = { Beginner: 400, Easy: 800, Medium: 1000, Tricky: 1150, Hard: 1600, Unfair: 1800, Extreme: 3000, Nightmare: Number.MAX_SAFE_INTEGER };
   const score = steps.reduce((total, step) => total + scores[step], 0);
@@ -483,6 +537,8 @@ export default function Home() {
   const [difficulty, setDifficulty] = useState<DifficultyRating | null>(null);
   const [walkthroughIndex, setWalkthroughIndex] = useState(0);
   const [copiedGrid, setCopiedGrid] = useState<"puzzle" | "solution" | null>(null);
+  const [puzzleInput, setPuzzleInput] = useState("");
+  const [inputError, setInputError] = useState<string | null>(null);
   const generate = () => {
     const started = performance.now();
     if (mode === "diagonal") {
@@ -495,6 +551,15 @@ export default function Home() {
     setElapsed(performance.now() - started);
   };
   const selectMode = (nextMode: Mode) => { setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
+  const loadPuzzle = () => {
+    const text = puzzleInput.replaceAll(/\s/g, "");
+    if (!/^[1-9.]{81}$/.test(text)) { setInputError("Enter exactly 81 digits or periods."); return; }
+    const puzzle = Array.from({ length: 9 }, (_, row) => text.slice(row * 9, row * 9 + 9).split("").map(value => value === "." ? 0 : Number(value)));
+    const solved = solveDiagonalGrid(puzzle);
+    if (!solved || countDiagonalSolutions(puzzle) !== 1) { setInputError("This must be a valid diagonal sudoku with one solution."); return; }
+    setMode("diagonal"); setGrid(puzzle); setSolution(solved); setDifficulty(rateDiagonalPuzzle(puzzle, solved));
+    setElapsed(null); setWalkthroughIndex(0); setCopiedGrid(null); setInputError(null);
+  };
   const copyGrid = async (board: Grid, kind: "puzzle" | "solution") => {
     // Keep the export at exactly 81 characters; a period represents an empty cell.
     await navigator.clipboard.writeText(board.flat().map(value => value || ".").join(""));
@@ -532,6 +597,12 @@ export default function Home() {
       >
         {copiedGrid === "puzzle" ? "Copied 81 cells" : "Copy 81-cell grid"}
       </button>
+      <section className="puzzle-loader">
+        <label htmlFor="puzzle-input">Load an 81-cell diagonal puzzle</label>
+        <textarea id="puzzle-input" value={puzzleInput} onChange={event => setPuzzleInput(event.target.value)} placeholder="Use digits 1–9 and . for blanks" rows={3} />
+        <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>
+        {inputError && <p role="alert">{inputError}</p>}
+      </section>
       <label className="digging-method">
         Digging method:
         <select value={diggingMethod} onChange={event => setDiggingMethod(event.target.value as DiggingMethod)}>

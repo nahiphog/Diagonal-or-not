@@ -6,7 +6,7 @@ type Grid = number[][];
 type Mode = "diagonal" | "anti-diagonal" | "one-of-each";
 type DiggingMethod = "single" | "double";
 type CandidateRemoval = { cell: number; digit: number };
-type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; message: string };
+type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; involved: CandidateRemoval[]; message: string };
 type DifficultyRating = { rating: string; score: number; techniques: string[]; logical: boolean; walkthrough: WalkthroughStep[]; tally: Record<string, number>; givens: number[] };
 const emptyGrid = () => Array.from({ length: 9 }, () => Array(9).fill(0));
 const allDigits = 0b111111111;
@@ -281,7 +281,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     if (items.length < size) return [];
     return items.flatMap((item, index) => combinations(items.slice(index + 1), size - 1).map(rest => [item, ...rest]));
   };
-  const add = (name: string, action: () => void) => {
+  const add = (name: string, action: () => void, involved: CandidateRemoval[] = []) => {
     const beforeValues = [...values];
     const beforeCandidates = [...candidates];
     action();
@@ -296,15 +296,21 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     const removed = beforeCandidates.flatMap((mask, cell) =>
       placed.includes(cell) ? [] : digits(mask & ~candidates[cell]).map(digit => ({ cell, digit })),
     );
-    const affectedCells = [...new Set([...placed, ...removed.map(item => item.cell)])];
+    const uniqueInvolved = [...new Map(involved.map(item => [`${item.cell}-${item.digit}`, item])).values()];
+    const affectedCells = [...new Set([...placed, ...removed.map(item => item.cell), ...uniqueInvolved.map(item => item.cell)])];
     const placedNames = placed.map(cell => `R${Math.floor(cell / 9) + 1}C${cell % 9 + 1}`);
     const removedNames = [...new Set(removed.map(item => `R${Math.floor(item.cell / 9) + 1}C${item.cell % 9 + 1}`))];
-    const message = placed.length
+    const baseMessage = placed.length
       ? `Placed ${placed.map(cell => values[cell]).join(", ")} in ${placedNames.join(", ")}.`
       : `Eliminated candidates in ${removedNames.join(", ")}.`;
+    const involvedDigits = [...new Set(uniqueInvolved.map(item => item.digit))];
+    const involvedCells = [...new Set(uniqueInvolved.map(item => `R${Math.floor(item.cell / 9) + 1}C${item.cell % 9 + 1}`))];
+    const message = uniqueInvolved.length
+      ? `${baseMessage} Highlighted digits ${involvedDigits.join(", ")} are the ${name.toLowerCase()} set in ${involvedCells.join(", ")}.`
+      : baseMessage;
     if (!placed.length && !removed.length) return false;
     steps.push(name);
-    walkthrough.push({ technique: name, values: [...values], candidates: [...candidates], affectedCells, placedCells: placed, removed, message });
+    walkthrough.push({ technique: name, values: [...values], candidates: [...candidates], affectedCells, placedCells: placed, removed, involved: uniqueInvolved, message });
     return true;
   };
 
@@ -315,6 +321,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     affectedCells: [],
     placedCells: [],
     removed: [],
+    involved: [],
     message: "Starting board with all available Snyder notations.",
   });
 
@@ -367,7 +374,8 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
         const mask = group.reduce((total, cell) => total | candidates[cell], 0);
         if (popcount(mask) !== size) continue;
         const targets = units[unitIndex].filter(cell => !group.includes(cell) && !values[cell]).flatMap(cell => digits(candidates[cell] & mask).map(digit => [cell, digit] as [number, number]));
-        if (targets.length && add(`Naked ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets))) { moveMade = true; break; }
+        const involved = group.flatMap(cell => digits(candidates[cell] & mask).map(digit => ({ cell, digit })));
+        if (targets.length && add(`Naked ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets), involved)) { moveMade = true; break; }
       }
     }
     if (moveMade) continue;
@@ -377,7 +385,8 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
         const mask = digitGroup.reduce((total, digit) => total | (1 << (digit - 1)), 0);
         const cells = empty.filter(cell => candidates[cell] & mask);
         const targets = cells.flatMap(cell => digits(candidates[cell] & ~mask).map(digit => [cell, digit] as [number, number]));
-        if (cells.length === size && targets.length && add(`Hidden ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets))) { moveMade = true; break; }
+        const involved = cells.flatMap(cell => digitGroup.filter(digit => candidates[cell] & (1 << (digit - 1))).map(digit => ({ cell, digit })));
+        if (cells.length === size && targets.length && add(`Hidden ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets), involved)) { moveMade = true; break; }
       }
       if (moveMade) break;
     }
@@ -539,7 +548,8 @@ export default function Home() {
                         // Cross-outs document this step's eliminations only.
                         // On the following step they disappear with the removed candidate.
                         const removed = step.removed.some(item => item.cell === cell && item.digit === digit);
-                        return <span className={removed ? "snyder-digit removed" : "snyder-digit"} key={digit}>{available || removed ? digit : ""}</span>;
+                        const involved = step.involved.some(item => item.cell === cell && item.digit === digit);
+                        return <span className={`snyder-digit ${removed ? "removed" : involved ? "involved" : ""}`} key={digit}>{available || removed ? digit : ""}</span>;
                       })}
                     </div>}
                   </div>)}
@@ -547,7 +557,7 @@ export default function Home() {
               </div>
               <aside className="walkthrough-details">
                 <p className="walkthrough-step">Step {walkthroughIndex} of {difficulty.walkthrough.length - 1} · <strong>{step.technique}</strong></p>
-                <p className="walkthrough-message">{step.message}{step.removed.length > 0 ? ` ${step.removed.length} Snyder notation${step.removed.length === 1 ? "" : "s"} removed in red.` : ""}</p>
+                <p className="walkthrough-message">{step.message}</p>
               </aside>
             </div>
             <div className="walkthrough-controls">

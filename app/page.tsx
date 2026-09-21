@@ -484,7 +484,8 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
           const firstPeers = new Set(peers[firstWing]);
           const targets = peers[secondWing].filter(cell => firstPeers.has(cell) && !values[cell] && candidates[cell] & (1 << (z - 1)));
           const involved = [pivot, firstWing, secondWing].flatMap(cell => digits(candidates[cell]).map(digit => ({ cell, digit })));
-          if (targets.length && add("XY-Wing", () => eliminate(targets.map(cell => [cell, z])), involved)) { moveMade = true; break; }
+          const explanation = `The green candidates form an XY-Wing: ${cellName(pivot)} is the pivot with {${x}, ${y}}, while ${cellName(firstWing)} has {${x}, ${z}} and ${cellName(secondWing)} has {${y}, ${z}}. The pivot sees both wing cells. If the pivot is ${x}, ${z} is forced in ${cellName(secondWing)}; if it is ${y}, ${z} is forced in ${cellName(firstWing)}. Thus ${z} must be in one of the two wings, so no cell that sees both wings can be ${z}. The red ${z}s are those eliminations.`;
+          if (targets.length && add("XY-Wing", () => eliminate(targets.map(cell => [cell, z])), involved, explanation)) { moveMade = true; break; }
         }
         if (moveMade) break;
       }
@@ -503,7 +504,8 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
         const firstPeers = new Set(peers[firstWing]);
         const targets = peers[secondWing].filter(cell => cell !== pivot && peers[pivot].includes(cell) && firstPeers.has(cell) && !values[cell] && candidates[cell] & (1 << (z - 1)));
         const involved = [pivot, firstWing, secondWing].flatMap(cell => digits(candidates[cell]).map(digit => ({ cell, digit })));
-        if (targets.length && add("XYZ-Wing", () => eliminate(targets.map(cell => [cell, z])), involved)) moveMade = true;
+        const explanation = `The green candidates form an XYZ-Wing: the pivot ${cellName(pivot)} has {${digits(pivotMask).join(", ")}}, with wings ${cellName(firstWing)} {${digits(candidates[firstWing]).join(", ")}} and ${cellName(secondWing)} {${digits(candidates[secondWing]).join(", ")}}. Both wings share ${z}, and both see the pivot. If a common peer were ${z}, it would remove ${z} from the pivot and both wings; the two wings would then force the pivot's other two digits away, leaving the pivot with no value. Therefore the red ${z}s in cells seeing the pivot and both wings are impossible.`;
+        if (targets.length && add("XYZ-Wing", () => eliminate(targets.map(cell => [cell, z])), involved, explanation)) moveMade = true;
         if (moveMade) break;
       }
     }
@@ -522,8 +524,9 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
           if (!connects) continue;
           const firstPeers = new Set(peers[first]);
           const targets = peers[second].filter(cell => firstPeers.has(cell) && !values[cell] && candidates[cell] & (1 << (eliminationDigit - 1)) && !locations.includes(cell));
-          const involved = [{ cell: first, digit: eliminationDigit }, { cell: second, digit: eliminationDigit }, { cell: linkA, digit: linkDigit }, { cell: linkB, digit: linkDigit }];
-          if (targets.length && add("W-Wing", () => eliminate(targets.map(cell => [cell, eliminationDigit])), involved)) { moveMade = true; break; }
+          const involved = [first, second].flatMap(cell => digits(candidates[cell]).map(digit => ({ cell, digit }))).concat([{ cell: linkA, digit: linkDigit }, { cell: linkB, digit: linkDigit }]);
+          const explanation = `The green candidates show a W-Wing. ${cellName(first)} and ${cellName(second)} are the matching {${x}, ${y}} endpoints, and ${linkDigit} appears only at ${cellName(linkA)} and ${cellName(linkB)} in one house. One of those green ${linkDigit}s must be true. Whichever one is true removes ${linkDigit} from its connected endpoint, forcing that endpoint to ${eliminationDigit}. Therefore ${eliminationDigit} must occupy one of the two endpoints, so every common peer cannot be ${eliminationDigit}. The red ${eliminationDigit}s are removed.`;
+          if (targets.length && add("W-Wing", () => eliminate(targets.map(cell => [cell, eliminationDigit])), involved, explanation)) { moveMade = true; break; }
         }
         if (moveMade) break;
       }
@@ -542,7 +545,15 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
         if (crosses.length !== size) continue;
         const baseSet = new Set(group.map(item => item.base));
         const targets = crosses.flatMap(cross => Array.from({ length: 9 }, (_, base) => byRows ? base * 9 + cross : cross * 9 + base).filter(cell => !baseSet.has(byRows ? Math.floor(cell / 9) : cell % 9) && !values[cell] && candidates[cell] & bit).map(cell => [cell, digit] as [number, number]));
-        if (targets.length && add(["", "", "X-Wing", "Swordfish", "Jellyfish"][size], () => eliminate(targets))) { moveMade = true; break; }
+        const sourceCells = group.flatMap(item => item.crosses.map(cross => byRows ? item.base * 9 + cross : cross * 9 + item.base));
+        const involved = sourceCells.map(cell => ({ cell, digit }));
+        const technique = ["", "", "X-Wing", "Swordfish", "Jellyfish"][size];
+        const baseLabel = byRows ? "rows" : "columns";
+        const crossLabel = byRows ? "columns" : "rows";
+        const baseNames = group.map(item => `${byRows ? "R" : "C"}${item.base + 1}`).join(", ");
+        const crossNames = crosses.map(cross => `${byRows ? "C" : "R"}${cross + 1}`).join(", ");
+        const explanation = `The green ${digit}s form a ${technique}: in ${baseLabel} ${baseNames}, candidate ${digit} is restricted to the same ${crossLabel} ${crossNames}. Because each of these ${baseLabel} must place one ${digit}, the ${digit}s must occupy the green intersections of those ${baseLabel} and ${crossLabel}. No other cell on ${crossLabel} ${crossNames} can be ${digit}; those conflicting candidate ${digit}s are shown in red and removed.`;
+        if (targets.length && add(technique, () => eliminate(targets), involved, explanation)) { moveMade = true; break; }
       }
       if (moveMade) break;
     }

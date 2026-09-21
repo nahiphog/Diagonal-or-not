@@ -429,11 +429,9 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
         { unit: 27, matches: (cell: number) => cell % 10 === 0 },
         { unit: 28, matches: (cell: number) => cell > 0 && cell < 80 && cell % 8 === 0 },
       ];
-      for (const line of lineUnits) {
-        if (locations.length > 1 && locations.every(line.matches)) {
-          const targets = units[line.unit].filter(cell => !units[box].includes(cell) && !values[cell] && candidates[cell] & bit);
-          if (targets.length && add("Locked Candidates (Pointing)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
-        }
+      for (const line of lineUnits) if (locations.length > 1 && locations.every(line.matches)) {
+        const targets = units[line.unit].filter(cell => !units[box].includes(cell) && !values[cell] && candidates[cell] & bit);
+        if (targets.length && add("Locked Candidates (Pointing)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
       }
     }
     if (moveMade) continue;
@@ -454,7 +452,11 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
       if (locations.length !== 2) continue;
       const firstPeers = new Set(peers[locations[0]]);
       const targets = peers[locations[1]].filter(cell => firstPeers.has(cell) && !values[cell] && candidates[cell] & bit);
-      if (targets.length && add("Locked Candidates (Diagonal)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
+      // Preserve the two diagonal candidates as the supporting evidence for
+      // this deduction. The walkthrough renders them in green, while the
+      // same digit in the peer-intersection targets is struck through red.
+      const involved = locations.map(cell => ({ cell, digit }));
+      if (targets.length && add("Locked Candidates (Diagonal)", () => eliminate(targets.map(cell => [cell, digit])), involved)) moveMade = true;
     }
     if (moveMade) continue;
 

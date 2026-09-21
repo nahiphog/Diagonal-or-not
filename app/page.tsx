@@ -484,8 +484,8 @@ export default function Home() {
   };
   const selectMode = (nextMode: Mode) => { setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
   const copyGrid = async (board: Grid, kind: "puzzle" | "solution") => {
-    // Keep the export at exactly 81 characters; zero represents an empty cell.
-    await navigator.clipboard.writeText(board.flat().map(value => value || 0).join(""));
+    // Keep the export at exactly 81 characters; a period represents an empty cell.
+    await navigator.clipboard.writeText(board.flat().map(value => value || ".").join(""));
     setCopiedGrid(kind);
   };
   const descriptions: Record<Mode, string> = {

@@ -236,9 +236,13 @@ function countDiagonalSolutions(startGrid: Grid, limit = 2) {
 // human solver).  It adds the two X-Sudoku units to the board model.  As in
 // sudokUI, a score is the sum of the techniques in the solve path; Brute Force
 // is a legitimate last-resort technique worth 10,000 points, not a score cap.
-function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
+function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating {
   const values = startGrid.flat();
   const givens = [...values];
+  // Digging has already verified that this is the puzzle's unique diagonal
+  // solution. Keep that solution as an invariant for the explanation engine:
+  // a valid Snyder elimination can never discard the solution digit.
+  const solutionValues = solvedGrid.flat();
   const units = [
     ...Array.from({ length: 9 }, (_, row) => Array.from({ length: 9 }, (_, column) => row * 9 + column)),
     ...Array.from({ length: 9 }, (_, column) => Array.from({ length: 9 }, (_, row) => row * 9 + column)),
@@ -261,11 +265,17 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
   const steps: string[] = [];
   const walkthrough: WalkthroughStep[] = [];
   const place = (cell: number, digit: number) => {
+    if (values[cell] || solutionValues[cell] !== digit) return false;
     values[cell] = digit; candidates[cell] = 0;
     const mask = ~(1 << (digit - 1));
     peers[cell].forEach(peer => { candidates[peer] &= mask; });
+    return true;
   };
-  const eliminate = (items: Array<[number, number]>) => items.forEach(([cell, digit]) => { candidates[cell] &= ~(1 << (digit - 1)); });
+  const eliminate = (items: Array<[number, number]>) => items.forEach(([cell, digit]) => {
+    // Do not remove a placed value, nor the digit required by the unique
+    // solution. This keeps every unsolved cell's candidates truthful.
+    if (!values[cell] && solutionValues[cell] !== digit) candidates[cell] &= ~(1 << (digit - 1));
+  });
   const combinations = <T,>(items: T[], size: number): T[][] => {
     if (size === 0) return [[]];
     if (items.length < size) return [];
@@ -275,6 +285,13 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
     const beforeValues = [...values];
     const beforeCandidates = [...candidates];
     action();
+    // Do not publish an invalid deduction. This guard also ensures that a
+    // later walkthrough slide can never contain an empty unsolved cell.
+    if (values.some((value, cell) => !value && candidates[cell] === 0)) {
+      values.splice(0, values.length, ...beforeValues);
+      candidates.splice(0, candidates.length, ...beforeCandidates);
+      return false;
+    }
     const placed = values.map((value, cell) => value && value !== beforeValues[cell] ? cell : -1).filter(cell => cell >= 0);
     const removed = beforeCandidates.flatMap((mask, cell) =>
       placed.includes(cell) ? [] : digits(mask & ~candidates[cell]).map(digit => ({ cell, digit })),
@@ -285,8 +302,10 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
     const message = placed.length
       ? `Placed ${placed.map(cell => values[cell]).join(", ")} in ${placedNames.join(", ")}.`
       : `Eliminated candidates in ${removedNames.join(", ")}.`;
+    if (!placed.length && !removed.length) return false;
     steps.push(name);
     walkthrough.push({ technique: name, values: [...values], candidates: [...candidates], affectedCells, placedCells: placed, removed, message });
+    return true;
   };
 
   walkthrough.push({
@@ -305,15 +324,15 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
     let moveMade = false;
     for (let unitIndex = 0; unitIndex < units.length && !moveMade; unitIndex++) {
       const blank = units[unitIndex].filter(cell => !values[cell]);
-      if (blank.length === 1 && candidates[blank[0]]) { add("Full House", () => place(blank[0], digits(candidates[blank[0]])[0])); moveMade = true; }
+      if (blank.length === 1 && candidates[blank[0]] && add("Full House", () => place(blank[0], digits(candidates[blank[0]])[0]))) moveMade = true;
     }
     if (moveMade) continue;
     const naked = values.findIndex((value, cell) => !value && popcount(candidates[cell]) === 1);
-    if (naked >= 0) { add("Naked Single", () => place(naked, digits(candidates[naked])[0])); continue; }
+    if (naked >= 0 && add("Naked Single", () => place(naked, digits(candidates[naked])[0]))) continue;
     for (const unit of units) {
       for (let digit = 1; digit <= 9; digit++) {
         const locations = unit.filter(cell => !values[cell] && (candidates[cell] & (1 << (digit - 1))));
-        if (locations.length === 1) { add("Hidden Single", () => place(locations[0], digit)); moveMade = true; break; }
+        if (locations.length === 1 && add("Hidden Single", () => place(locations[0], digit))) { moveMade = true; break; }
       }
       if (moveMade) break;
     }
@@ -327,7 +346,7 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
         if (group.length > 1 && new Set(group).size === 1) {
           const lineUnit = line ? group[0] : 9 + group[0];
           const targets = units[lineUnit].filter(cell => !units[box].includes(cell) && !values[cell] && candidates[cell] & bit);
-          if (targets.length) { add("Locked Candidates (Pointing)", () => eliminate(targets.map(cell => [cell, digit]))); moveMade = true; }
+          if (targets.length && add("Locked Candidates (Pointing)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
         }
       }
     }
@@ -337,7 +356,7 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
       const boxes = locations.map(cell => 18 + Math.floor(Math.floor(cell / 9) / 3) * 3 + Math.floor((cell % 9) / 3));
       if (locations.length > 1 && new Set(boxes).size === 1) {
         const targets = units[boxes[0]].filter(cell => !units[line].includes(cell) && !values[cell] && candidates[cell] & bit);
-        if (targets.length) { add("Locked Candidates (Claiming)", () => eliminate(targets.map(cell => [cell, digit]))); moveMade = true; }
+        if (targets.length && add("Locked Candidates (Claiming)", () => eliminate(targets.map(cell => [cell, digit])))) moveMade = true;
       }
     }
     if (moveMade) continue;
@@ -348,7 +367,7 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
         const mask = group.reduce((total, cell) => total | candidates[cell], 0);
         if (popcount(mask) !== size) continue;
         const targets = units[unitIndex].filter(cell => !group.includes(cell) && !values[cell]).flatMap(cell => digits(candidates[cell] & mask).map(digit => [cell, digit] as [number, number]));
-        if (targets.length) { add(`Naked ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets)); moveMade = true; break; }
+        if (targets.length && add(`Naked ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets))) { moveMade = true; break; }
       }
     }
     if (moveMade) continue;
@@ -358,7 +377,7 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
         const mask = digitGroup.reduce((total, digit) => total | (1 << (digit - 1)), 0);
         const cells = empty.filter(cell => candidates[cell] & mask);
         const targets = cells.flatMap(cell => digits(candidates[cell] & ~mask).map(digit => [cell, digit] as [number, number]));
-        if (cells.length === size && targets.length) { add(`Hidden ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets)); moveMade = true; break; }
+        if (cells.length === size && targets.length && add(`Hidden ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets))) { moveMade = true; break; }
       }
       if (moveMade) break;
     }
@@ -376,7 +395,7 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
         if (crosses.length !== size) continue;
         const baseSet = new Set(group.map(item => item.base));
         const targets = crosses.flatMap(cross => Array.from({ length: 9 }, (_, base) => byRows ? base * 9 + cross : cross * 9 + base).filter(cell => !baseSet.has(byRows ? Math.floor(cell / 9) : cell % 9) && !values[cell] && candidates[cell] & bit).map(cell => [cell, digit] as [number, number]));
-        if (targets.length) { add(["", "", "X-Wing", "Swordfish", "Jellyfish"][size], () => eliminate(targets)); moveMade = true; break; }
+        if (targets.length && add(["", "", "X-Wing", "Swordfish", "Jellyfish"][size], () => eliminate(targets))) { moveMade = true; break; }
       }
       if (moveMade) break;
     }
@@ -399,7 +418,7 @@ function rateDiagonalPuzzle(startGrid: Grid): DifficultyRating {
       return false;
     };
     if (cell < 0 || !solveFromHere()) break;
-    add("Brute Force", () => place(cell, draft[cell]));
+    if (!add("Brute Force", () => place(cell, draft[cell]))) break;
   }
 
   const scores = sudokUiTechniqueDifficulty;
@@ -447,7 +466,7 @@ export default function Home() {
     if (mode === "diagonal") {
       const dug = digDiagonal(diggingMethod);
       setGrid(dug.puzzle); setSolution(dug.solution);
-      setDifficulty(rateDiagonalPuzzle(dug.puzzle));
+      setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution));
     } else { setGrid(generateGrid(mode)); setSolution(null); setDifficulty(null); }
     setWalkthroughIndex(0);
     setElapsed(performance.now() - started);

@@ -282,7 +282,7 @@ function solveDiagonalGrid(startGrid: Grid): Grid | null {
 // human solver).  It adds the two X-Sudoku units to the board model.  As in
 // sudokUI, a score is the sum of the techniques in the solve path; Brute Force
 // is a legitimate last-resort technique worth 10,000 points, not a score cap.
-function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating {
+function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagonals = true): DifficultyRating {
   const values = startGrid.flat();
   const givens = [...values];
   // Digging has already verified that this is the puzzle's unique diagonal
@@ -459,9 +459,10 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
     }
     if (moveMade) continue;
 
-    // When a digit has exactly two possible cells on a diagonal, any cell
-    // seeing both of them cannot contain that digit.
-    for (const diagonal of [27, 28]) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
+    // This rule assumes that each diagonal contains every digit exactly once.
+    // Anti-diagonal Sudoku permits repeats on both diagonals, so this finder
+    // is explicitly disabled for an Anti-diagonal walkthrough.
+    if (hasDistinctDiagonals) for (const diagonal of [27, 28]) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
       const bit = 1 << (digit - 1), locations = units[diagonal].filter(cell => !values[cell] && candidates[cell] & bit);
       if (locations.length !== 2) continue;
       const firstPeers = new Set(peers[locations[0]]);

@@ -637,6 +637,8 @@ export default function Home() {
   const [isBuilding, setIsBuilding] = useState(false);
   const [isBuiltPuzzle, setIsBuiltPuzzle] = useState(false);
   const [buildAttempts, setBuildAttempts] = useState(0);
+  const [minimumDifficulty, setMinimumDifficulty] = useState("0");
+  const [maximumDifficulty, setMaximumDifficulty] = useState("1000000");
   const buildStartedAt = useRef(0);
   const generate = () => {
     const started = performance.now();
@@ -654,6 +656,11 @@ export default function Home() {
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
     if (mode !== "diagonal") { setBuilderError("The custom builder currently uses the diagonal solver. Select Diagonal to build a puzzle."); return; }
+    const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
+    if (!Number.isInteger(minimum) || !Number.isInteger(maximum) || minimum < 0 || maximum < minimum) {
+      setBuilderError("Enter whole-number difficulty scores where the maximum is at least the minimum.");
+      return;
+    }
     buildStartedAt.current = performance.now();
     setBuildAttempts(0); setBuilderError(null); setIsBuilding(true);
   };
@@ -669,8 +676,11 @@ export default function Home() {
         const candidatePuzzle = candidateSolution.map((row, rowIndex) => row.map((digit, columnIndex) => protectedCells[rowIndex * 9 + columnIndex] ? digit : 0));
         attemptsThisPass += 1;
         if (countDiagonalSolutions(candidatePuzzle) === 1) {
+          const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution);
+          const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
+          if (candidateDifficulty.score < minimum || candidateDifficulty.score > maximum) continue;
           setBuildAttempts(total => total + attemptsThisPass);
-          setGrid(candidatePuzzle); setSolution(candidateSolution); setDifficulty(rateDiagonalPuzzle(candidatePuzzle, candidateSolution));
+          setGrid(candidatePuzzle); setSolution(candidateSolution); setDifficulty(candidateDifficulty);
           setIsBuiltPuzzle(true);
           setWalkthroughIndex(0); setCopiedGrid(null); setElapsed(performance.now() - buildStartedAt.current);
           setIsBuilding(false);
@@ -684,7 +694,7 @@ export default function Home() {
     };
     nextAttempt = window.setTimeout(searchForPattern, 0);
     return () => { cancelled = true; if (nextAttempt !== undefined) window.clearTimeout(nextAttempt); };
-  }, [isBuilding, protectedCells]);
+  }, [isBuilding, protectedCells, minimumDifficulty, maximumDifficulty]);
   const loadPuzzle = () => {
     const text = puzzleInput.replaceAll(/\s/g, "");
     if (!/^[1-9.]{81}$/.test(text)) { setInputError("Enter exactly 81 digits or periods."); return; }
@@ -727,7 +737,7 @@ export default function Home() {
         <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
         <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
       </div>
-      <div className={`puzzle-output ${isBuiltPuzzle && difficulty ? "puzzle-output-built" : ""}`}>
+      <div className={`puzzle-output ${mode === "diagonal" && solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">
           <div className="grid-frame">
             <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -746,7 +756,7 @@ export default function Home() {
             {copiedGrid === "puzzle" ? "Copied 81 cells" : isBuiltPuzzle ? "Copy built 81-cell puzzle" : "Copy 81-cell grid"}
           </button>
         </div>
-        {isBuiltPuzzle && difficulty && <aside className="built-difficulty-panel" aria-label="Built puzzle difficulty and technique tally">
+        {mode === "diagonal" && solution && difficulty && <aside className="built-difficulty-panel" aria-label="Puzzle difficulty and technique tally">
           <h2>Difficulty rating</h2>
           <p>{grid.flat().filter(Boolean).length} givens · {difficulty.rating} ({difficulty.score}) · {(elapsed ?? 0).toFixed(0)} ms</p>
           <div className="technique-tally">
@@ -775,6 +785,15 @@ export default function Home() {
         <h2>Build a puzzle</h2>
         <p>Select the positions that must be givens. Green cells are the complete clue pattern: every other cell will be blank in the finished puzzle.</p>
         <p className="builder-count">{protectedCells.filter(Boolean).length} protected givens</p>
+        <div className="difficulty-range" role="group" aria-label="Required difficulty score range">
+          <label>Minimum difficulty score
+            <input type="number" min="0" step="1" value={minimumDifficulty} onChange={event => setMinimumDifficulty(event.target.value)} disabled={isBuilding} />
+          </label>
+          <label>Maximum difficulty score
+            <input type="number" min="0" step="1" value={maximumDifficulty} onChange={event => setMaximumDifficulty(event.target.value)} disabled={isBuilding} />
+          </label>
+        </div>
+        <p className="difficulty-range-note">The builder keeps trying until the exact clue pattern has one solution and its score falls within this range.</p>
         <div className="grid-frame builder-frame">
           <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
@@ -792,21 +811,6 @@ export default function Home() {
         {builderError && <p className="builder-error" role="alert">{builderError}</p>}
       </section>
       {mode === "diagonal" && solution && <section className="dig-results">
-        {!isBuiltPuzzle && <p>{grid.flat().filter(Boolean).length} givens · Difficulty: {difficulty?.rating ?? "Unrated"} ({difficulty?.score ?? 0}) · {(elapsed ?? 0).toFixed(0)} ms</p>}
-        {!isBuiltPuzzle && difficulty && <div className="technique-tally">
-          <h2>Technique tally</h2>
-          <table>
-            <thead><tr><th>Technique</th><th>Used in steps</th></tr></thead>
-            <tbody>{Object.entries(difficulty.tally).sort(([first], [second]) =>
-              (sudokUiTechniqueDifficulty[first] ?? Number.MAX_SAFE_INTEGER) - (sudokUiTechniqueDifficulty[second] ?? Number.MAX_SAFE_INTEGER)
-              || first.localeCompare(second),
-            ).map(([technique]) => {
-              const usedSteps = difficulty.walkthrough.slice(1).flatMap((step, index) => step.technique === technique ? [index + 1] : []);
-              return <tr key={technique}><td>{technique}</td><td>{usedSteps.join(", ")}</td></tr>;
-            })}</tbody>
-          </table>
-        </div>}
-        {!isBuiltPuzzle && difficulty && <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>}
         {difficulty && difficulty.walkthrough.length > 0 && (() => {
           const step = difficulty.walkthrough[walkthroughIndex];
           return <section className="walkthrough" aria-label="Interactive solution walkthrough">

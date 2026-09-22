@@ -637,8 +637,8 @@ export default function Home() {
   const [isBuilding, setIsBuilding] = useState(false);
   const [isBuiltPuzzle, setIsBuiltPuzzle] = useState(false);
   const [buildAttempts, setBuildAttempts] = useState(0);
-  const [minimumDifficulty, setMinimumDifficulty] = useState("0");
-  const [maximumDifficulty, setMaximumDifficulty] = useState("1000000");
+  const [minimumDifficulty, setMinimumDifficulty] = useState("500");
+  const [maximumDifficulty, setMaximumDifficulty] = useState("10000");
   const buildStartedAt = useRef(0);
   const generate = () => {
     const started = performance.now();

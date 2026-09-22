@@ -30,6 +30,13 @@ h1 { margin: 0 0 2rem; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; lett
 .copy-grid-button { margin-top: 0.85rem; border: 1px solid #1d4ed8; border-radius: 0.45rem; padding: 0.55rem 0.8rem; background: #fff; color: #1d4ed8; font: inherit; font-size: 0.9rem; font-weight: 700; cursor: pointer; }
 .copy-grid-button:hover:not(:disabled) { background: #eff6ff; }
 .copy-grid-button:disabled { border-color: #9ca3af; color: #9ca3af; cursor: not-allowed; }
+.puzzle-output { display: grid; justify-items: center; }
+.puzzle-display { display: grid; justify-items: center; }
+.puzzle-output-built { grid-template-columns: minmax(0, 540px) minmax(15rem, 1fr); align-items: start; gap: 1.5rem; width: min(96vw, 1040px); }
+.built-difficulty-panel { width: 100%; padding: 1rem; border: 1px solid #bfdbfe; border-radius: 0.7rem; background: #f8fbff; }
+.built-difficulty-panel h2 { margin: 0 0 0.65rem; font-size: 1.1rem; }
+.built-difficulty-panel > p { margin: 0; color: #4b5563; font-size: 0.9rem; line-height: 1.45; }
+.built-difficulty-panel .technique-tally { margin: 1rem 0; }
 .puzzle-loader { display: grid; width: min(82vw, 540px); gap: 0.5rem; margin-top: 1.25rem; font-weight: 600; }
 .puzzle-loader textarea { width: 100%; resize: vertical; border: 1px solid #9ca3af; border-radius: 0.4rem; padding: 0.55rem 0.65rem; color: #111827; font: 0.9rem/1.35 monospace; }
 .puzzle-loader .copy-grid-button { justify-self: start; margin-top: 0; }
@@ -80,7 +87,7 @@ h1 { margin: 0 0 2rem; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; lett
 .snyder-digit.involved { color: #166534; background: #dcfce7; border-radius: 0.2rem; box-shadow: inset 0 0 0 1px #86efac; }
 .snyder-digit.removed { color: #dc2626; text-decoration: line-through; }
 .walkthrough-message { min-height: 2.75rem; font-size: 0.9rem; }
-.walkthrough-controls { display: flex; justify-content: space-between; gap: 0.75rem; }
+.walkthrough-controls { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.75rem; }
 .walkthrough-controls button { border: 0; border-radius: 0.4rem; padding: 0.6rem 0.9rem; background: #1d4ed8; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .walkthrough-controls button:disabled { background: #9ca3af; cursor: not-allowed; }
 .solution-grid { width: 100%; }
@@ -88,6 +95,7 @@ h1 { margin: 0 0 2rem; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; lett
 .solution-grid .solved { color: #2563eb; }
 @media (max-width: 620px) {
   .dig-results { width: min(94vw, 540px); }
+  .puzzle-output-built { grid-template-columns: 1fr; width: auto; }
   .walkthrough-layout { grid-template-columns: 1fr; }
   .walkthrough-details { padding: 0; }
 }

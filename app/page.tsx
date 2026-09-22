@@ -635,10 +635,12 @@ export default function Home() {
   const [protectedCells, setProtectedCells] = useState<boolean[]>(() => Array(81).fill(false));
   const [builderError, setBuilderError] = useState<string | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
+  const [isBuiltPuzzle, setIsBuiltPuzzle] = useState(false);
   const [buildAttempts, setBuildAttempts] = useState(0);
   const buildStartedAt = useRef(0);
   const generate = () => {
     const started = performance.now();
+    setIsBuiltPuzzle(false);
     if (mode === "diagonal") {
       const dug = digDiagonal(diggingMethod);
       setGrid(dug.puzzle); setSolution(dug.solution);
@@ -648,7 +650,7 @@ export default function Home() {
     setCopiedGrid(null);
     setElapsed(performance.now() - started);
   };
-  const selectMode = (nextMode: Mode) => { setIsBuilding(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
+  const selectMode = (nextMode: Mode) => { setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
     if (mode !== "diagonal") { setBuilderError("The custom builder currently uses the diagonal solver. Select Diagonal to build a puzzle."); return; }
@@ -669,6 +671,7 @@ export default function Home() {
         if (countDiagonalSolutions(candidatePuzzle) === 1) {
           setBuildAttempts(total => total + attemptsThisPass);
           setGrid(candidatePuzzle); setSolution(candidateSolution); setDifficulty(rateDiagonalPuzzle(candidatePuzzle, candidateSolution));
+          setIsBuiltPuzzle(true);
           setWalkthroughIndex(0); setCopiedGrid(null); setElapsed(performance.now() - buildStartedAt.current);
           setIsBuilding(false);
           return;
@@ -689,7 +692,7 @@ export default function Home() {
     const solved = solveDiagonalGrid(puzzle);
     if (!solved || countDiagonalSolutions(puzzle) !== 1) { setInputError("This must be a valid diagonal sudoku with one solution."); return; }
     setMode("diagonal"); setGrid(puzzle); setSolution(solved); setDifficulty(rateDiagonalPuzzle(puzzle, solved));
-    setElapsed(null); setWalkthroughIndex(0); setCopiedGrid(null); setInputError(null);
+    setElapsed(null); setWalkthroughIndex(0); setCopiedGrid(null); setInputError(null); setIsBuiltPuzzle(false);
   };
   const copyGrid = async (board: Grid, kind: "puzzle" | "solution") => {
     // Keep the export at exactly 81 characters; a period represents an empty cell.
@@ -724,22 +727,44 @@ export default function Home() {
         <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
         <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
       </div>
-      <div className="grid-frame">
-        <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
-          <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
-        </svg>
-        <div className="grid" aria-label="9 by 9 sudoku grid">
-          {grid.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}
+      <div className={`puzzle-output ${isBuiltPuzzle && difficulty ? "puzzle-output-built" : ""}`}>
+        <div className="puzzle-display">
+          <div className="grid-frame">
+            <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
+              <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
+            </svg>
+            <div className="grid" aria-label="9 by 9 sudoku grid">
+              {grid.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}
+            </div>
+          </div>
+          <button
+            className="copy-grid-button"
+            onClick={() => copyGrid(grid, "puzzle")}
+            disabled={!grid.flat().some(Boolean)}
+          >
+            {copiedGrid === "puzzle" ? "Copied 81 cells" : isBuiltPuzzle ? "Copy built 81-cell puzzle" : "Copy 81-cell grid"}
+          </button>
         </div>
+        {isBuiltPuzzle && difficulty && <aside className="built-difficulty-panel" aria-label="Built puzzle difficulty and technique tally">
+          <h2>Difficulty rating</h2>
+          <p>{grid.flat().filter(Boolean).length} givens · {difficulty.rating} ({difficulty.score}) · {(elapsed ?? 0).toFixed(0)} ms</p>
+          <div className="technique-tally">
+            <h2>Technique tally</h2>
+            <table>
+              <thead><tr><th>Technique</th><th>Used in steps</th></tr></thead>
+              <tbody>{Object.entries(difficulty.tally).sort(([first], [second]) =>
+                (sudokUiTechniqueDifficulty[first] ?? Number.MAX_SAFE_INTEGER) - (sudokUiTechniqueDifficulty[second] ?? Number.MAX_SAFE_INTEGER)
+                || first.localeCompare(second),
+              ).map(([technique]) => {
+                const usedSteps = difficulty.walkthrough.slice(1).flatMap((step, index) => step.technique === technique ? [index + 1] : []);
+                return <tr key={technique}><td>{technique}</td><td>{usedSteps.join(", ")}</td></tr>;
+              })}</tbody>
+            </table>
+          </div>
+          <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>
+        </aside>}
       </div>
-      <button
-        className="copy-grid-button"
-        onClick={() => copyGrid(grid, "puzzle")}
-        disabled={!grid.flat().some(Boolean)}
-      >
-        {copiedGrid === "puzzle" ? "Copied 81 cells" : "Copy 81-cell grid"}
-      </button>
       <section className="puzzle-loader">
         <label htmlFor="puzzle-input">Load an 81-cell diagonal puzzle</label>
         <textarea id="puzzle-input" value={puzzleInput} onChange={event => setPuzzleInput(event.target.value)} placeholder="Use digits 1–9 and . for blanks" rows={3} />
@@ -767,8 +792,8 @@ export default function Home() {
         {builderError && <p className="builder-error" role="alert">{builderError}</p>}
       </section>
       {mode === "diagonal" && solution && <section className="dig-results">
-        <p>{grid.flat().filter(Boolean).length} givens · Difficulty: {difficulty?.rating ?? "Unrated"} ({difficulty?.score ?? 0}) · {(elapsed ?? 0).toFixed(0)} ms</p>
-        {difficulty && <div className="technique-tally">
+        {!isBuiltPuzzle && <p>{grid.flat().filter(Boolean).length} givens · Difficulty: {difficulty?.rating ?? "Unrated"} ({difficulty?.score ?? 0}) · {(elapsed ?? 0).toFixed(0)} ms</p>}
+        {!isBuiltPuzzle && difficulty && <div className="technique-tally">
           <h2>Technique tally</h2>
           <table>
             <thead><tr><th>Technique</th><th>Used in steps</th></tr></thead>
@@ -781,7 +806,7 @@ export default function Home() {
             })}</tbody>
           </table>
         </div>}
-        {difficulty && <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>}
+        {!isBuiltPuzzle && difficulty && <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>}
         {difficulty && difficulty.walkthrough.length > 0 && (() => {
           const step = difficulty.walkthrough[walkthroughIndex];
           return <section className="walkthrough" aria-label="Interactive solution walkthrough">
@@ -813,8 +838,10 @@ export default function Home() {
               </aside>
             </div>
             <div className="walkthrough-controls">
+              <button onClick={() => setWalkthroughIndex(0)} disabled={walkthroughIndex === 0}>Go to step 0</button>
               <button onClick={() => setWalkthroughIndex(index => Math.max(0, index - 1))} disabled={walkthroughIndex === 0}>Previous</button>
               <button onClick={() => setWalkthroughIndex(index => Math.min(difficulty.walkthrough.length - 1, index + 1))} disabled={walkthroughIndex === difficulty.walkthrough.length - 1}>Next</button>
+              <button onClick={() => setWalkthroughIndex(difficulty.walkthrough.length - 1)} disabled={walkthroughIndex === difficulty.walkthrough.length - 1}>Go to last step</button>
             </div>
           </section>;
         })()}

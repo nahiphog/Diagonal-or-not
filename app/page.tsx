@@ -629,7 +629,7 @@ export default function Home() {
   const [diggingMethod, setDiggingMethod] = useState<DiggingMethod>("double");
   const [difficulty, setDifficulty] = useState<DifficultyRating | null>(null);
   const [walkthroughIndex, setWalkthroughIndex] = useState(0);
-  const [copiedGrid, setCopiedGrid] = useState<"puzzle" | "solution" | null>(null);
+  const [copiedGrid, setCopiedGrid] = useState<"puzzle" | "solution" | "solution-image" | "solution-image-download" | null>(null);
   const [puzzleInput, setPuzzleInput] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
   const [protectedCells, setProtectedCells] = useState<boolean[]>(() => Array(81).fill(false));
@@ -709,6 +709,45 @@ export default function Home() {
     await navigator.clipboard.writeText(board.flat().map(value => value || ".").join(""));
     setCopiedGrid(kind);
   };
+  const copySolutionImage = async () => {
+    if (!solution) return;
+    const size = 900, cellSize = size / 9;
+    const canvas = document.createElement("canvas");
+    canvas.width = size; canvas.height = size;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.fillStyle = "#ffffff"; context.fillRect(0, 0, size, size);
+    context.strokeStyle = "#6b7280"; context.lineWidth = 1;
+    for (let line = 1; line < 9; line += 1) {
+      context.beginPath(); context.moveTo(line * cellSize, 0); context.lineTo(line * cellSize, size); context.stroke();
+      context.beginPath(); context.moveTo(0, line * cellSize); context.lineTo(size, line * cellSize); context.stroke();
+    }
+    context.strokeStyle = "#111827"; context.lineWidth = 8;
+    for (const line of [0, 3, 6, 9]) {
+      context.beginPath(); context.moveTo(line * cellSize, 0); context.lineTo(line * cellSize, size); context.stroke();
+      context.beginPath(); context.moveTo(0, line * cellSize); context.lineTo(size, line * cellSize); context.stroke();
+    }
+    context.strokeStyle = "#2563eb"; context.lineWidth = 5; context.setLineDash([14, 20]);
+    context.beginPath(); context.moveTo(0, 0); context.lineTo(size, size); context.stroke();
+    context.beginPath(); context.moveTo(size, 0); context.lineTo(0, size); context.stroke();
+    context.setLineDash([]); context.textAlign = "center"; context.textBaseline = "middle"; context.font = "600 58px Arial";
+    solution.flat().forEach((value, cell) => {
+      context.fillStyle = grid.flat()[cell] ? "#111827" : "#2563eb";
+      context.fillText(String(value), (cell % 9 + 0.5) * cellSize, (Math.floor(cell / 9) + 0.54) * cellSize);
+    });
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
+    if (!blob) return;
+    if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      setCopiedGrid("solution-image");
+      return;
+    }
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl; link.download = "completed-diagonal-sudoku.png"; link.click();
+    URL.revokeObjectURL(downloadUrl);
+    setCopiedGrid("solution-image-download");
+  };
   const descriptions: Record<Mode, string> = {
     diagonal: "Normal Sudoku rules apply. Digits along the indicated diagonals cannot repeat.",
     "anti-diagonal": "Normal Sudoku rules apply. Exactly three distinct numbers appear along each marked diagonal.",
@@ -737,6 +776,35 @@ export default function Home() {
         <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
         <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
       </div>
+      <section className="puzzle-builder" aria-label="Build a puzzle">
+        <h2>Build a puzzle</h2>
+        <p>Select the positions that must be givens. Green cells are the complete clue pattern: every other cell will be blank in the finished puzzle.</p>
+        <p className="builder-count">{protectedCells.filter(Boolean).length} protected givens</p>
+        <div className="difficulty-range" role="group" aria-label="Required difficulty score range">
+          <label>Minimum difficulty score
+            <input type="number" min="0" step="1" value={minimumDifficulty} onChange={event => setMinimumDifficulty(event.target.value)} disabled={isBuilding} />
+          </label>
+          <label>Maximum difficulty score
+            <input type="number" min="0" step="1" value={maximumDifficulty} onChange={event => setMaximumDifficulty(event.target.value)} disabled={isBuilding} />
+          </label>
+        </div>
+        <p className="difficulty-range-note">The builder keeps trying until the exact clue pattern has one solution and its score falls within this range.</p>
+        <div className="grid-frame builder-frame">
+          <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
+            <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
+          </svg>
+          <div className="grid builder-grid" aria-label="Select required givens">
+            {protectedCells.map((selected, cell) => <button className={`cell builder-cell ${selected ? "protected" : ""}`} aria-pressed={selected} aria-label={`${selected ? "Keep" : "Allow removal of"} row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`} key={cell} onClick={() => toggleProtectedCell(cell)} disabled={isBuilding}>{selected ? "•" : ""}</button>)}
+          </div>
+        </div>
+        <div className="builder-actions">
+          <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(true))} disabled={isBuilding}>Select all</button>
+          <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(false))} disabled={isBuilding}>Clear selection</button>
+        </div>
+        {isBuilding && <p className="builder-status" role="status">Building from this exact pattern · {buildAttempts} completed grids tested.</p>}
+        {builderError && <p className="builder-error" role="alert">{builderError}</p>}
+      </section>
       <div className={`puzzle-output ${mode === "diagonal" && solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">
           <div className="grid-frame">
@@ -781,35 +849,6 @@ export default function Home() {
         <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>
         {inputError && <p role="alert">{inputError}</p>}
       </section>
-      <section className="puzzle-builder" aria-label="Build a puzzle">
-        <h2>Build a puzzle</h2>
-        <p>Select the positions that must be givens. Green cells are the complete clue pattern: every other cell will be blank in the finished puzzle.</p>
-        <p className="builder-count">{protectedCells.filter(Boolean).length} protected givens</p>
-        <div className="difficulty-range" role="group" aria-label="Required difficulty score range">
-          <label>Minimum difficulty score
-            <input type="number" min="0" step="1" value={minimumDifficulty} onChange={event => setMinimumDifficulty(event.target.value)} disabled={isBuilding} />
-          </label>
-          <label>Maximum difficulty score
-            <input type="number" min="0" step="1" value={maximumDifficulty} onChange={event => setMaximumDifficulty(event.target.value)} disabled={isBuilding} />
-          </label>
-        </div>
-        <p className="difficulty-range-note">The builder keeps trying until the exact clue pattern has one solution and its score falls within this range.</p>
-        <div className="grid-frame builder-frame">
-          <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
-            <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
-          </svg>
-          <div className="grid builder-grid" aria-label="Select required givens">
-            {protectedCells.map((selected, cell) => <button className={`cell builder-cell ${selected ? "protected" : ""}`} aria-pressed={selected} aria-label={`${selected ? "Keep" : "Allow removal of"} row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`} key={cell} onClick={() => toggleProtectedCell(cell)} disabled={isBuilding}>{selected ? "•" : ""}</button>)}
-          </div>
-        </div>
-        <div className="builder-actions">
-          <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(true))} disabled={isBuilding}>Select all</button>
-          <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(false))} disabled={isBuilding}>Clear selection</button>
-        </div>
-        {isBuilding && <p className="builder-status" role="status">Building from this exact pattern · {buildAttempts} completed grids tested.</p>}
-        {builderError && <p className="builder-error" role="alert">{builderError}</p>}
-      </section>
       {mode === "diagonal" && solution && <section className="dig-results">
         {difficulty && difficulty.walkthrough.length > 0 && (() => {
           const step = difficulty.walkthrough[walkthroughIndex];
@@ -853,9 +892,14 @@ export default function Home() {
         <div className="grid solution-grid" aria-label="Completed sudoku grid">
           {solution.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className={grid[rowIndex][columnIndex] ? "cell given" : "cell solved"} key={`${rowIndex}-${columnIndex}`}>{value}</div>))}
         </div>
-        <button className="copy-grid-button" onClick={() => copyGrid(solution, "solution")}>
-          {copiedGrid === "solution" ? "Copied final grid" : "Copy final grid"}
-        </button>
+        <div className="solution-copy-actions">
+          <button className="copy-grid-button" onClick={() => copyGrid(solution, "solution")}>
+            {copiedGrid === "solution" ? "Copied 81-cell text" : "Copy 81-cell text"}
+          </button>
+          <button className="copy-grid-button" onClick={copySolutionImage}>
+            {copiedGrid === "solution-image" ? "Copied grid image" : copiedGrid === "solution-image-download" ? "Downloaded grid image" : "Copy grid image"}
+          </button>
+        </div>
       </section>}
     </main>
   );

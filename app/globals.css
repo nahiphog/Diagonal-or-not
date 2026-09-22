@@ -94,9 +94,11 @@ h1 { margin: 0 0 2rem; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; lett
 .walkthrough-controls { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.75rem; }
 .walkthrough-controls button { border: 0; border-radius: 0.4rem; padding: 0.6rem 0.9rem; background: #1d4ed8; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .walkthrough-controls button:disabled { background: #9ca3af; cursor: not-allowed; }
-.solution-grid { width: 100%; }
+.solution-grid { width: min(82vw, 540px); }
 .solution-grid .given { color: #111827; }
 .solution-grid .solved { color: #2563eb; }
+.solution-copy-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; }
+.solution-copy-actions .copy-grid-button { margin-top: 0.85rem; }
 @media (max-width: 620px) {
   .dig-results { width: min(94vw, 540px); }
   .puzzle-output-built { grid-template-columns: 1fr; width: auto; }

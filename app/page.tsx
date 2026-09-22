@@ -889,8 +889,14 @@ export default function Home() {
           </section>;
         })()}
         <h2>Completed grid</h2>
-        <div className="grid solution-grid" aria-label="Completed sudoku grid">
-          {solution.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className={grid[rowIndex][columnIndex] ? "cell given" : "cell solved"} key={`${rowIndex}-${columnIndex}`}>{value}</div>))}
+        <div className="grid-frame">
+          <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
+            <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
+          </svg>
+          <div className="grid solution-grid" aria-label="Completed sudoku grid">
+            {solution.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className={grid[rowIndex][columnIndex] ? "cell given" : "cell solved"} key={`${rowIndex}-${columnIndex}`}>{value}</div>))}
+          </div>
         </div>
         <div className="solution-copy-actions">
           <button className="copy-grid-button" onClick={() => copyGrid(solution, "solution")}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Grid = number[][];
 type Mode = "diagonal" | "anti-diagonal" | "one-of-each";
@@ -634,6 +634,9 @@ export default function Home() {
   const [inputError, setInputError] = useState<string | null>(null);
   const [protectedCells, setProtectedCells] = useState<boolean[]>(() => Array(81).fill(false));
   const [builderError, setBuilderError] = useState<string | null>(null);
+  const [isBuilding, setIsBuilding] = useState(false);
+  const [buildAttempts, setBuildAttempts] = useState(0);
+  const buildStartedAt = useRef(0);
   const generate = () => {
     const started = performance.now();
     if (mode === "diagonal") {
@@ -645,15 +648,40 @@ export default function Home() {
     setCopiedGrid(null);
     setElapsed(performance.now() - started);
   };
-  const selectMode = (nextMode: Mode) => { setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
+  const selectMode = (nextMode: Mode) => { setIsBuilding(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
-    if (mode !== "diagonal") { setBuilderError("The custom builder currently uses the diagonal digging solver. Select Diagonal to build a puzzle."); return; }
-    const started = performance.now();
-    const dug = digDiagonal(diggingMethod, protectedCells);
-    setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution));
-    setWalkthroughIndex(0); setCopiedGrid(null); setElapsed(performance.now() - started); setBuilderError(null);
+    if (mode !== "diagonal") { setBuilderError("The custom builder currently uses the diagonal solver. Select Diagonal to build a puzzle."); return; }
+    buildStartedAt.current = performance.now();
+    setBuildAttempts(0); setBuilderError(null); setIsBuilding(true);
   };
+  const haltBuilding = () => { setIsBuilding(false); setBuilderError(`Building halted after ${buildAttempts} attempted completed grids.`); };
+  useEffect(() => {
+    if (!isBuilding) return;
+    let cancelled = false;
+    let nextAttempt: number | undefined;
+    const searchForPattern = () => {
+      let attemptsThisPass = 0;
+      while (attemptsThisPass < 2 && !cancelled) {
+        const candidateSolution = generateGrid("diagonal");
+        const candidatePuzzle = candidateSolution.map((row, rowIndex) => row.map((digit, columnIndex) => protectedCells[rowIndex * 9 + columnIndex] ? digit : 0));
+        attemptsThisPass += 1;
+        if (countDiagonalSolutions(candidatePuzzle) === 1) {
+          setBuildAttempts(total => total + attemptsThisPass);
+          setGrid(candidatePuzzle); setSolution(candidateSolution); setDifficulty(rateDiagonalPuzzle(candidatePuzzle, candidateSolution));
+          setWalkthroughIndex(0); setCopiedGrid(null); setElapsed(performance.now() - buildStartedAt.current);
+          setIsBuilding(false);
+          return;
+        }
+      }
+      if (!cancelled) {
+        setBuildAttempts(total => total + attemptsThisPass);
+        nextAttempt = window.setTimeout(searchForPattern, 0);
+      }
+    };
+    nextAttempt = window.setTimeout(searchForPattern, 0);
+    return () => { cancelled = true; if (nextAttempt !== undefined) window.clearTimeout(nextAttempt); };
+  }, [isBuilding, protectedCells]);
   const loadPuzzle = () => {
     const text = puzzleInput.replaceAll(/\s/g, "");
     if (!/^[1-9.]{81}$/.test(text)) { setInputError("Enter exactly 81 digits or periods."); return; }
@@ -684,6 +712,18 @@ export default function Home() {
         <button className={mode === "one-of-each" ? "active" : ""} onClick={() => selectMode("one-of-each")}>One of each</button>
       </div>
       <p className="rule-description">{descriptions[mode]}</p>
+      <label className="digging-method">
+        Digging method:
+        <select value={diggingMethod} onChange={event => setDiggingMethod(event.target.value as DiggingMethod)} disabled={isBuilding}>
+          <option value="single">Single cell digging</option>
+          <option value="double">Double cell digging</option>
+        </select>
+      </label>
+      <div className="puzzle-actions">
+        <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>
+        <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
+        <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
+      </div>
       <div className="grid-frame">
         <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
           <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
@@ -706,17 +746,9 @@ export default function Home() {
         <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>
         {inputError && <p role="alert">{inputError}</p>}
       </section>
-      <label className="digging-method">
-        Digging method:
-        <select value={diggingMethod} onChange={event => setDiggingMethod(event.target.value as DiggingMethod)}>
-          <option value="single">Single cell digging</option>
-          <option value="double">Double cell digging</option>
-        </select>
-      </label>
-      <button className="generate-button" onClick={generate}>Generate a grid</button>
       <section className="puzzle-builder" aria-label="Build a puzzle">
         <h2>Build a puzzle</h2>
-        <p>Select the positions that must stay as givens. Green cells are protected; unselected cells may be removed only when the puzzle remains uniquely solvable.</p>
+        <p>Select the positions that must be givens. Green cells are the complete clue pattern: every other cell will be blank in the finished puzzle.</p>
         <p className="builder-count">{protectedCells.filter(Boolean).length} protected givens</p>
         <div className="grid-frame builder-frame">
           <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -724,14 +756,14 @@ export default function Home() {
             <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
           </svg>
           <div className="grid builder-grid" aria-label="Select required givens">
-            {protectedCells.map((selected, cell) => <button className={`cell builder-cell ${selected ? "protected" : ""}`} aria-pressed={selected} aria-label={`${selected ? "Keep" : "Allow removal of"} row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`} key={cell} onClick={() => toggleProtectedCell(cell)}>{selected ? "•" : ""}</button>)}
+            {protectedCells.map((selected, cell) => <button className={`cell builder-cell ${selected ? "protected" : ""}`} aria-pressed={selected} aria-label={`${selected ? "Keep" : "Allow removal of"} row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`} key={cell} onClick={() => toggleProtectedCell(cell)} disabled={isBuilding}>{selected ? "•" : ""}</button>)}
           </div>
         </div>
         <div className="builder-actions">
-          <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(true))}>Select all</button>
-          <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(false))}>Clear selection</button>
-          <button className="generate-button" onClick={buildPuzzle}>Build puzzle</button>
+          <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(true))} disabled={isBuilding}>Select all</button>
+          <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(false))} disabled={isBuilding}>Clear selection</button>
         </div>
+        {isBuilding && <p className="builder-status" role="status">Building from this exact pattern · {buildAttempts} completed grids tested.</p>}
         {builderError && <p className="builder-error" role="alert">{builderError}</p>}
       </section>
       {mode === "diagonal" && solution && <section className="dig-results">

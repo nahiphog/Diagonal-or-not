@@ -21,6 +21,12 @@ h1 { margin: 0 0 2rem; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; lett
 .diagonal-guides line { stroke: #2563eb; stroke-width: 1.8; stroke-dasharray: 1.5 2.4; vector-effect: non-scaling-stroke; }
 .diagonal-guides line.diagonal-active { stroke: #16a34a; }
 .generate-button { margin-top: 2rem; border: 0; border-radius: 0.5rem; padding: 0.85rem 1.25rem; background: #111827; color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; }
+.puzzle-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.65rem; margin: 1rem 0; }
+.puzzle-actions .generate-button { margin-top: 0; }
+.build-button { background: #166534; }
+.build-button:hover:not(:disabled) { background: #15803d; }
+.halt-button { border: 1px solid #b91c1c; border-radius: 0.5rem; padding: 0.85rem 1.1rem; background: #fff; color: #b91c1c; font: inherit; font-weight: 700; cursor: pointer; }
+.halt-button:disabled, .generate-button:disabled { opacity: 0.5; cursor: not-allowed; }
 .copy-grid-button { margin-top: 0.85rem; border: 1px solid #1d4ed8; border-radius: 0.45rem; padding: 0.55rem 0.8rem; background: #fff; color: #1d4ed8; font: inherit; font-size: 0.9rem; font-weight: 700; cursor: pointer; }
 .copy-grid-button:hover:not(:disabled) { background: #eff6ff; }
 .copy-grid-button:disabled { border-color: #9ca3af; color: #9ca3af; cursor: not-allowed; }
@@ -41,10 +47,12 @@ h1 { margin: 0 0 2rem; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; lett
 .builder-cell { appearance: none; padding: 0; background: #fff; color: #166534; cursor: pointer; font: inherit; font-size: 1.4rem; }
 .builder-cell:hover { background: #f0fdf4; }
 .builder-cell.protected { background: #bbf7d0; box-shadow: inset 0 0 0 2px #16a34a; }
+.builder-cell:disabled { cursor: wait; }
 .builder-cell:focus-visible { z-index: 4; outline: 3px solid #2563eb; outline-offset: -3px; }
 .builder-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.65rem; margin-top: 1rem; }
 .builder-actions .copy-grid-button, .builder-actions .generate-button { margin-top: 0; }
 .builder-error { margin-top: 0.75rem !important; color: #b91c1c !important; }
+.builder-status { margin-top: 0.75rem !important; color: #166534 !important; font-weight: 700; }
 .dig-results { width: min(94vw, 760px); margin-top: 2rem; }
 .dig-results h2 { margin: 1rem 0 0.75rem; font-size: 1.25rem; }
 .dig-results p { color: #4b5563; }

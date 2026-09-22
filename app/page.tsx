@@ -235,6 +235,68 @@ function countDiagonalSolutions(startGrid: Grid, limit = 2) {
   return search();
 }
 
+function countAntiDiagonalSolutions(startGrid: Grid, limit = 2) {
+  const grid = startGrid.map(row => [...row]);
+  const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0);
+  const diagonalMasks = [0, 0];
+  const diagonalCounts = [Array(10).fill(0), Array(10).fill(0)];
+  const diagonalsFor = (row: number, column: number) => [row === column ? 0 : -1, row + column === 8 ? 1 : -1].filter(index => index >= 0);
+  const addDiagonalDigit = (row: number, column: number, digit: number) => {
+    for (const diagonal of diagonalsFor(row, column)) {
+      diagonalCounts[diagonal][digit] += 1;
+      diagonalMasks[diagonal] |= 1 << (digit - 1);
+    }
+  };
+  const removeDiagonalDigit = (row: number, column: number, digit: number) => {
+    for (const diagonal of diagonalsFor(row, column)) {
+      diagonalCounts[diagonal][digit] -= 1;
+      if (!diagonalCounts[diagonal][digit]) diagonalMasks[diagonal] &= ~(1 << (digit - 1));
+    }
+  };
+
+  for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) {
+    const digit = grid[row][column];
+    if (!digit) continue;
+    if (digit < 1 || digit > 9) return 0;
+    const bit = 1 << (digit - 1), house = Math.floor(row / 3) * 3 + Math.floor(column / 3);
+    if ((rows[row] | columns[column] | houses[house]) & bit) return 0;
+    rows[row] |= bit; columns[column] |= bit; houses[house] |= bit;
+    addDiagonalDigit(row, column, digit);
+    if (diagonalsFor(row, column).some(diagonal => bitCount(diagonalMasks[diagonal]) > 3)) return 0;
+  }
+
+  const choicesFor = (row: number, column: number) => {
+    const house = Math.floor(row / 3) * 3 + Math.floor(column / 3);
+    let choices = allDigits & ~(rows[row] | columns[column] | houses[house]);
+    for (const diagonal of diagonalsFor(row, column)) {
+      // Once three digits have appeared on a diagonal, only those digits may
+      // fill its remaining cells. Before then, a new digit is still allowed.
+      if (bitCount(diagonalMasks[diagonal]) === 3) choices &= diagonalMasks[diagonal];
+    }
+    return choices;
+  };
+  const search = (): number => {
+    let bestRow = -1, bestColumn = -1, bestChoices = 0, fewest = 10;
+    for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) if (!grid[row][column]) {
+      const choices = choicesFor(row, column), count = bitCount(choices);
+      if (!count) return 0;
+      if (count < fewest) { bestRow = row; bestColumn = column; bestChoices = choices; fewest = count; }
+    }
+    if (bestRow < 0) return 1;
+    let found = 0;
+    for (let digit = 1; digit <= 9 && found < limit; digit += 1) if (bestChoices & (1 << (digit - 1))) {
+      const bit = 1 << (digit - 1), house = Math.floor(bestRow / 3) * 3 + Math.floor(bestColumn / 3);
+      grid[bestRow][bestColumn] = digit; rows[bestRow] |= bit; columns[bestColumn] |= bit; houses[house] |= bit;
+      addDiagonalDigit(bestRow, bestColumn, digit);
+      found += search();
+      removeDiagonalDigit(bestRow, bestColumn, digit);
+      grid[bestRow][bestColumn] = 0; rows[bestRow] ^= bit; columns[bestColumn] ^= bit; houses[house] ^= bit;
+    }
+    return found;
+  };
+  return search();
+}
+
 function solveDiagonalGrid(startGrid: Grid): Grid | null {
   const grid = startGrid.map(row => [...row]);
   const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0), diagonals = [0, 0];
@@ -299,8 +361,12 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagon
     Array.from({ length: 9 }, (_, index) => index * 10),
     Array.from({ length: 9 }, (_, index) => (index + 1) * 8),
   ];
-  const unitsFor = Array.from({ length: 81 }, (_, index) => units.map((unit, unitIndex) => unit.includes(index) ? unitIndex : -1).filter(unit => unit >= 0));
-  const peers = Array.from({ length: 81 }, (_, index) => [...new Set(unitsFor[index].flatMap(unit => units[unit]))].filter(cell => cell !== index));
+  // Anti-diagonal uses a global "at most three digits" condition, not a
+  // no-repeat house. Its standard deductions must therefore only use rows,
+  // columns and boxes; the two diagonals are not peer units in that variant.
+  const activeUnits = hasDistinctDiagonals ? units : units.slice(0, 27);
+  const unitsFor = Array.from({ length: 81 }, (_, index) => activeUnits.map((unit, unitIndex) => unit.includes(index) ? unitIndex : -1).filter(unit => unit >= 0));
+  const peers = Array.from({ length: 81 }, (_, index) => [...new Set(unitsFor[index].flatMap(unit => activeUnits[unit]))].filter(cell => cell !== index));
   const candidates = Array.from({ length: 81 }, (_, index) => {
     if (values[index]) return 0;
     const used = new Set(peers[index].map(cell => values[cell]).filter(Boolean));
@@ -376,17 +442,17 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagon
   });
 
   // This matches sudokUI's order for these applicable techniques, while each
-  // finder uses 29 units so diagonal deductions are included as well.
+  // finder uses the valid house set for the selected puzzle variant.
   while (values.some(value => !value)) {
     let moveMade = false;
-    for (let unitIndex = 0; unitIndex < units.length && !moveMade; unitIndex++) {
-      const blank = units[unitIndex].filter(cell => !values[cell]);
+    for (let unitIndex = 0; unitIndex < activeUnits.length && !moveMade; unitIndex++) {
+      const blank = activeUnits[unitIndex].filter(cell => !values[cell]);
       if (blank.length === 1 && candidates[blank[0]] && add("Full House", () => place(blank[0], digits(candidates[blank[0]])[0]))) moveMade = true;
     }
     if (moveMade) continue;
     const naked = values.findIndex((value, cell) => !value && popcount(candidates[cell]) === 1);
     if (naked >= 0 && add("Naked Single", () => place(naked, digits(candidates[naked])[0]))) continue;
-    for (const unit of units) {
+    for (const unit of activeUnits) {
       for (let digit = 1; digit <= 9; digit++) {
         const locations = unit.filter(cell => !values[cell] && (candidates[cell] & (1 << (digit - 1))));
         if (locations.length === 1 && add("Hidden Single", () => place(locations[0], digit))) { moveMade = true; break; }
@@ -398,18 +464,18 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagon
     // Try both forms of each subset size before moving to a larger subset.
     // In particular, a hidden pair is preferred over any triple/quadruple.
     for (const size of [2, 3, 4]) {
-      for (let unitIndex = 0; unitIndex < units.length && !moveMade; unitIndex++) {
-        const cells = units[unitIndex].filter(cell => !values[cell] && popcount(candidates[cell]) <= size);
+      for (let unitIndex = 0; unitIndex < activeUnits.length && !moveMade; unitIndex++) {
+        const cells = activeUnits[unitIndex].filter(cell => !values[cell] && popcount(candidates[cell]) <= size);
         for (const group of combinations(cells, size)) {
           const mask = group.reduce((total, cell) => total | candidates[cell], 0);
           if (popcount(mask) !== size) continue;
-          const targets = units[unitIndex].filter(cell => !group.includes(cell) && !values[cell]).flatMap(cell => digits(candidates[cell] & mask).map(digit => [cell, digit] as [number, number]));
+          const targets = activeUnits[unitIndex].filter(cell => !group.includes(cell) && !values[cell]).flatMap(cell => digits(candidates[cell] & mask).map(digit => [cell, digit] as [number, number]));
           const involved = group.flatMap(cell => digits(candidates[cell] & mask).map(digit => ({ cell, digit })));
           if (targets.length && add(`Naked ${["", "", "Pair", "Triple", "Quadruple"][size]}`, () => eliminate(targets), involved)) { moveMade = true; break; }
         }
       }
       if (moveMade) break;
-      for (const unit of units) {
+      for (const unit of activeUnits) {
         const empty = unit.filter(cell => !values[cell]);
         const missingDigits = Array.from({ length: 9 }, (_, index) => index + 1).filter(digit => !unit.some(cell => values[cell] === digit));
         for (const digitGroup of combinations(missingDigits, size)) {
@@ -429,8 +495,8 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagon
     }
     if (moveMade) continue;
 
-    // Pointing and claiming apply to the two diagonal units as well as rows
-    // and columns. Check them after all pairs, triples and quadruples.
+    // Pointing and claiming apply to rows and columns in every variant, and
+    // to the two diagonals only when they are distinct-digit houses.
     for (let box = 18; box < 27 && !moveMade; box++) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
       const bit = 1 << (digit - 1), locations = units[box].filter(cell => !values[cell] && candidates[cell] & bit);
       const lineUnits = [
@@ -438,8 +504,10 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagon
           unit: locations.length ? (line ? Math.floor(locations[0] / 9) : 9 + locations[0] % 9) : -1,
           matches: (cell: number) => line ? Math.floor(cell / 9) === Math.floor(locations[0] / 9) : cell % 9 === locations[0] % 9,
         })),
-        { unit: 27, matches: (cell: number) => cell % 10 === 0 },
-        { unit: 28, matches: (cell: number) => cell > 0 && cell < 80 && cell % 8 === 0 },
+        ...(hasDistinctDiagonals ? [
+          { unit: 27, matches: (cell: number) => cell % 10 === 0 },
+          { unit: 28, matches: (cell: number) => cell > 0 && cell < 80 && cell % 8 === 0 },
+        ] : []),
       ];
       for (const line of lineUnits) if (locations.length > 1 && locations.every(line.matches)) {
         const targets = units[line.unit].filter(cell => !units[box].includes(cell) && !values[cell] && candidates[cell] & bit);
@@ -448,7 +516,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagon
       }
     }
     if (moveMade) continue;
-    for (const line of [...Array.from({ length: 18 }, (_, index) => index), 27, 28]) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
+    for (const line of [...Array.from({ length: 18 }, (_, index) => index), ...(hasDistinctDiagonals ? [27, 28] : [])]) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
       const bit = 1 << (digit - 1), locations = units[line].filter(cell => !values[cell] && candidates[cell] & bit);
       const boxes = locations.map(cell => 18 + Math.floor(Math.floor(cell / 9) / 3) * 3 + Math.floor((cell % 9) / 3));
       if (locations.length > 1 && new Set(boxes).size === 1) {
@@ -656,7 +724,7 @@ export default function Home() {
   const selectMode = (nextMode: Mode) => { setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
-    if (mode !== "diagonal") { setBuilderError("The custom builder currently uses the diagonal solver. Select Diagonal to build a puzzle."); return; }
+    if (mode === "one-of-each") { setBuilderError("The custom builder currently supports Diagonal and Anti-diagonal puzzles. Select one of those modes to build a puzzle."); return; }
     const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
     if (!Number.isInteger(minimum) || !Number.isInteger(maximum) || minimum < 0 || maximum < minimum) {
       setBuilderError("Enter whole-number difficulty scores where the maximum is at least the minimum.");
@@ -673,11 +741,17 @@ export default function Home() {
     const searchForPattern = () => {
       let attemptsThisPass = 0;
       while (attemptsThisPass < 2 && !cancelled) {
-        const candidateSolution = generateGrid("diagonal");
+        const candidateSolution = generateGrid(mode);
         const candidatePuzzle = candidateSolution.map((row, rowIndex) => row.map((digit, columnIndex) => protectedCells[rowIndex * 9 + columnIndex] ? digit : 0));
         attemptsThisPass += 1;
-        if (countDiagonalSolutions(candidatePuzzle) === 1) {
-          const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution);
+        const unique = mode === "diagonal"
+          ? countDiagonalSolutions(candidatePuzzle) === 1
+          : countAntiDiagonalSolutions(candidatePuzzle) === 1;
+        if (unique) {
+          // The anti-diagonal rating uses standard Sudoku houses only. Its
+          // special repeated-diagonal condition is used for uniqueness, but
+          // does not create a false distinct-diagonal deduction.
+          const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution, mode === "diagonal");
           const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
           if (candidateDifficulty.score < minimum || candidateDifficulty.score > maximum) continue;
           setBuildAttempts(total => total + attemptsThisPass);
@@ -695,7 +769,7 @@ export default function Home() {
     };
     nextAttempt = window.setTimeout(searchForPattern, 0);
     return () => { cancelled = true; if (nextAttempt !== undefined) window.clearTimeout(nextAttempt); };
-  }, [isBuilding, protectedCells, minimumDifficulty, maximumDifficulty]);
+  }, [isBuilding, protectedCells, minimumDifficulty, maximumDifficulty, mode]);
   const loadPuzzle = () => {
     const text = puzzleInput.replaceAll(/\s/g, "");
     if (!/^[1-9.]{81}$/.test(text)) { setInputError("Enter exactly 81 digits or periods."); return; }
@@ -789,7 +863,9 @@ export default function Home() {
             <input type="number" min="0" step="1" value={maximumDifficulty} onChange={event => setMaximumDifficulty(event.target.value)} disabled={isBuilding} />
           </label>
         </div>
-        <p className="difficulty-range-note">The builder keeps trying until the exact clue pattern has one solution and its score falls within this range.</p>
+        <p className="difficulty-range-note">{mode === "anti-diagonal"
+          ? "The builder keeps trying until the exact clue pattern has one Anti-diagonal solution. Its score uses standard Sudoku techniques without treating either repeating diagonal as a no-repeat house."
+          : "The builder keeps trying until the exact clue pattern has one solution and its score falls within this range."}</p>
         <div className="grid-frame builder-frame">
           <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
@@ -806,7 +882,7 @@ export default function Home() {
         {isBuilding && <p className="builder-status" role="status">Building from this exact pattern · {buildAttempts} completed grids tested.</p>}
         {builderError && <p className="builder-error" role="alert">{builderError}</p>}
       </section>
-      <div className={`puzzle-output ${mode === "diagonal" && solution && difficulty ? "puzzle-output-built" : ""}`}>
+      <div className={`puzzle-output ${mode !== "one-of-each" && solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">
           <div className="grid-frame">
             <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -825,7 +901,7 @@ export default function Home() {
             {copiedGrid === "puzzle" ? "Copied 81 cells" : isBuiltPuzzle ? "Copy built 81-cell puzzle" : "Copy 81-cell grid"}
           </button>
         </div>
-        {mode === "diagonal" && solution && difficulty && <aside className="built-difficulty-panel" aria-label="Puzzle difficulty and technique tally">
+        {mode !== "one-of-each" && solution && difficulty && <aside className="built-difficulty-panel" aria-label="Puzzle difficulty and technique tally">
           <h2>Difficulty rating</h2>
           <p>{grid.flat().filter(Boolean).length} givens · {difficulty.rating} ({difficulty.score}) · {(elapsed ?? 0).toFixed(0)} ms</p>
           <div className="technique-tally">
@@ -850,7 +926,7 @@ export default function Home() {
         <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>
         {inputError && <p role="alert">{inputError}</p>}
       </section>
-      {mode === "diagonal" && solution && <section className="dig-results">
+      {mode !== "one-of-each" && solution && <section className="dig-results">
         {difficulty && difficulty.walkthrough.length > 0 && (() => {
           const step = difficulty.walkthrough[walkthroughIndex];
           return <section className="walkthrough" aria-label="Interactive solution walkthrough">

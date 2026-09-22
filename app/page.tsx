@@ -596,13 +596,17 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid): DifficultyRating
   return { rating, score, techniques: [...new Set(steps)], logical: !steps.includes("Brute Force"), walkthrough, tally, givens };
 }
 
-function digDiagonal(method: DiggingMethod) {
+function digDiagonal(method: DiggingMethod, protectedCells = Array(81).fill(false)) {
   const solution = generateGrid("diagonal");
   const puzzle = solution.map(row => [...row]);
   const cells = method === "single"
     ? Array.from({ length: 81 }, (_, index) => [Math.floor(index / 9), index % 9])
+      .filter(([row, column]) => !protectedCells[row * 9 + column])
     : Array.from({ length: 81 }, (_, index) => [Math.floor(index / 9), index % 9])
-      .filter(([row, column]) => row < 4 || (row === 4 && column <= 4));
+      .filter(([row, column]) => {
+        const mirrorRow = 8 - row, mirrorColumn = 8 - column;
+        return (row < 4 || (row === 4 && column <= 4)) && !protectedCells[row * 9 + column] && !protectedCells[mirrorRow * 9 + mirrorColumn];
+      });
 
   for (const [row, column] of shuffle(cells.map(([row, column]) => row * 9 + column)).map(cell => [Math.floor(cell / 9), cell % 9])) {
     const mirrorRow = 8 - row, mirrorColumn = 8 - column;
@@ -628,6 +632,8 @@ export default function Home() {
   const [copiedGrid, setCopiedGrid] = useState<"puzzle" | "solution" | null>(null);
   const [puzzleInput, setPuzzleInput] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
+  const [protectedCells, setProtectedCells] = useState<boolean[]>(() => Array(81).fill(false));
+  const [builderError, setBuilderError] = useState<string | null>(null);
   const generate = () => {
     const started = performance.now();
     if (mode === "diagonal") {
@@ -640,6 +646,14 @@ export default function Home() {
     setElapsed(performance.now() - started);
   };
   const selectMode = (nextMode: Mode) => { setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
+  const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
+  const buildPuzzle = () => {
+    if (mode !== "diagonal") { setBuilderError("The custom builder currently uses the diagonal digging solver. Select Diagonal to build a puzzle."); return; }
+    const started = performance.now();
+    const dug = digDiagonal(diggingMethod, protectedCells);
+    setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution));
+    setWalkthroughIndex(0); setCopiedGrid(null); setElapsed(performance.now() - started); setBuilderError(null);
+  };
   const loadPuzzle = () => {
     const text = puzzleInput.replaceAll(/\s/g, "");
     if (!/^[1-9.]{81}$/.test(text)) { setInputError("Enter exactly 81 digits or periods."); return; }
@@ -700,6 +714,26 @@ export default function Home() {
         </select>
       </label>
       <button className="generate-button" onClick={generate}>Generate a grid</button>
+      <section className="puzzle-builder" aria-label="Build a puzzle">
+        <h2>Build a puzzle</h2>
+        <p>Select the positions that must stay as givens. Green cells are protected; unselected cells may be removed only when the puzzle remains uniquely solvable.</p>
+        <p className="builder-count">{protectedCells.filter(Boolean).length} protected givens</p>
+        <div className="grid-frame builder-frame">
+          <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
+            <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
+          </svg>
+          <div className="grid builder-grid" aria-label="Select required givens">
+            {protectedCells.map((selected, cell) => <button className={`cell builder-cell ${selected ? "protected" : ""}`} aria-pressed={selected} aria-label={`${selected ? "Keep" : "Allow removal of"} row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`} key={cell} onClick={() => toggleProtectedCell(cell)}>{selected ? "•" : ""}</button>)}
+          </div>
+        </div>
+        <div className="builder-actions">
+          <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(true))}>Select all</button>
+          <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(false))}>Clear selection</button>
+          <button className="generate-button" onClick={buildPuzzle}>Build puzzle</button>
+        </div>
+        {builderError && <p className="builder-error" role="alert">{builderError}</p>}
+      </section>
       {mode === "diagonal" && solution && <section className="dig-results">
         <p>{grid.flat().filter(Boolean).length} givens · Difficulty: {difficulty?.rating ?? "Unrated"} ({difficulty?.score ?? 0}) · {(elapsed ?? 0).toFixed(0)} ms</p>
         {difficulty && <div className="technique-tally">

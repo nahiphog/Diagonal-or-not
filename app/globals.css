@@ -18,6 +18,9 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; letter-spac
 .dashboard-difficulty .dashboard-title { margin-bottom: 0; }
 .dashboard-difficulty label { display: grid; gap: 0.35rem; color: #374151; font-size: 0.8rem; font-weight: 700; }
 .dashboard-difficulty input { min-width: 0; width: 100%; border: 1px solid #86efac; border-radius: 0.4rem; padding: 0.5rem 0.6rem; background: #fff; color: #111827; font: inherit; }
+.dashboard-digging-method { display: grid; gap: 0.45rem; margin-top: 1.5rem; color: #374151; font-size: 0.8rem; font-weight: 700; }
+.dashboard-digging-method select { width: 100%; border: 1px solid #9ca3af; border-radius: 0.4rem; padding: 0.5rem 0.6rem; background: #fff; color: #111827; font: inherit; }
+.dashboard-digging-method span { color: #4b5563; font-size: 0.74rem; font-weight: 400; line-height: 1.35; }
 .grid-frame { position: relative; width: min(82vw, 540px); }
 .grid { position: relative; isolation: isolate; display: grid; grid-template-columns: repeat(9, 1fr); border: 5px solid #111827; }
 .grid::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; background: linear-gradient(to right, transparent calc(33.333% - 2.5px), #111827 calc(33.333% - 2.5px), #111827 calc(33.333% + 2.5px), transparent calc(33.333% + 2.5px)), linear-gradient(to right, transparent calc(66.667% - 2.5px), #111827 calc(66.667% - 2.5px), #111827 calc(66.667% + 2.5px), transparent calc(66.667% + 2.5px)), linear-gradient(to bottom, transparent calc(33.333% - 2.5px), #111827 calc(33.333% - 2.5px), #111827 calc(33.333% + 2.5px), transparent calc(33.333% + 2.5px)), linear-gradient(to bottom, transparent calc(66.667% - 2.5px), #111827 calc(66.667% - 2.5px), #111827 calc(66.667% + 2.5px), transparent calc(66.667% + 2.5px)); }
@@ -53,8 +56,6 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; letter-spac
 .puzzle-loader textarea { width: 100%; resize: vertical; border: 1px solid #9ca3af; border-radius: 0.4rem; padding: 0.55rem 0.65rem; color: #111827; font: 0.9rem/1.35 monospace; }
 .puzzle-loader .copy-grid-button { justify-self: start; margin-top: 0; }
 .puzzle-loader p { margin: 0; color: #b91c1c; font-size: 0.85rem; }
-.digging-method { display: flex; align-items: center; gap: 0.6rem; margin-top: 1.5rem; font-weight: 600; }
-.digging-method select { border: 1px solid #9ca3af; border-radius: 0.4rem; padding: 0.5rem 0.65rem; background: #fff; color: #111827; font: inherit; }
 .generate-button:hover { background: #374151; }
 .generate-button:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
 .puzzle-builder { width: min(94vw, 620px); margin-top: 2rem; padding: 1.25rem; border: 1px solid #bbf7d0; border-radius: 0.7rem; background: #f0fdf4; }

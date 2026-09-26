@@ -346,6 +346,57 @@ function countAntiDiagonalSolutions(startGrid: Grid, limit = 2) {
   return search();
 }
 
+function countQueenSolutions(startGrid: Grid, limit = 2) {
+  const grid = startGrid.map(row => [...row]);
+  const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0);
+  const queenDescending = new Set<number>(), queenAscending = new Set<number>();
+  const queenBit = 1 << 8;
+  const houseFor = (row: number, column: number) => Math.floor(row / 3) * 3 + Math.floor(column / 3);
+  const add = (row: number, column: number, digit: number) => {
+    const bit = 1 << (digit - 1), house = houseFor(row, column);
+    rows[row] |= bit; columns[column] |= bit; houses[house] |= bit;
+    if (digit === 9) { queenDescending.add(row - column); queenAscending.add(row + column); }
+  };
+  const remove = (row: number, column: number, digit: number) => {
+    const bit = 1 << (digit - 1), house = houseFor(row, column);
+    rows[row] ^= bit; columns[column] ^= bit; houses[house] ^= bit;
+    if (digit === 9) { queenDescending.delete(row - column); queenAscending.delete(row + column); }
+  };
+
+  for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) {
+    const digit = grid[row][column];
+    if (!digit) continue;
+    if (digit < 1 || digit > 9) return 0;
+    const bit = 1 << (digit - 1), house = houseFor(row, column);
+    if ((rows[row] | columns[column] | houses[house]) & bit) return 0;
+    if (digit === 9 && (queenDescending.has(row - column) || queenAscending.has(row + column))) return 0;
+    add(row, column, digit);
+  }
+
+  const search = (): number => {
+    let bestRow = -1, bestColumn = -1, bestChoices = 0, fewest = 10;
+    for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) if (!grid[row][column]) {
+      const house = houseFor(row, column);
+      let choices = allDigits & ~(rows[row] | columns[column] | houses[house]);
+      if (queenDescending.has(row - column) || queenAscending.has(row + column)) choices &= ~queenBit;
+      const count = bitCount(choices);
+      if (!count) return 0;
+      if (count < fewest) { bestRow = row; bestColumn = column; bestChoices = choices; fewest = count; }
+    }
+    if (bestRow < 0) return 1;
+    let found = 0;
+    for (let digit = 1; digit <= 9 && found < limit; digit += 1) if (bestChoices & (1 << (digit - 1))) {
+      grid[bestRow][bestColumn] = digit;
+      add(bestRow, bestColumn, digit);
+      found += search();
+      remove(bestRow, bestColumn, digit);
+      grid[bestRow][bestColumn] = 0;
+    }
+    return found;
+  };
+  return search();
+}
+
 function solveDiagonalGrid(startGrid: Grid): Grid | null {
   const grid = startGrid.map(row => [...row]);
   const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0), diagonals = [0, 0];
@@ -739,6 +790,18 @@ function digDiagonal(method: DiggingMethod, protectedCells = Array(81).fill(fals
   return { puzzle, solution };
 }
 
+function digQueen() {
+  const solution = generateGrid("queen");
+  const puzzle = solution.map(row => [...row]);
+  const cells = shuffle(Array.from({ length: 81 }, (_, index) => index));
+  for (const cell of cells) {
+    const row = Math.floor(cell / 9), column = cell % 9, value = puzzle[row][column];
+    puzzle[row][column] = 0;
+    if (countQueenSolutions(puzzle) !== 1) puzzle[row][column] = value;
+  }
+  return { puzzle, solution };
+}
+
 export default function Home() {
   const [mode, setMode] = useState<Mode>("diagonal");
   const [grid, setGrid] = useState<Grid>(emptyGrid);
@@ -767,12 +830,15 @@ export default function Home() {
       const dug = digDiagonal(diggingMethod);
       setGrid(dug.puzzle); setSolution(dug.solution);
       setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution));
+    } else if (mode === "queen") {
+      const dug = digQueen();
+      setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(null);
     } else { setGrid(generateGrid(mode)); setSolution(null); setDifficulty(null); }
     setWalkthroughIndex(0);
     setCopiedGrid(null);
     setElapsed(performance.now() - started);
   };
-  const selectMode = (nextMode: Mode) => { setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
+  const selectMode = (nextMode: Mode) => { setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); if (nextMode === "queen") setDiggingMethod("single"); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
     setIsBuilderExpanded(true);
@@ -893,13 +959,13 @@ export default function Home() {
   };
   const copySolutionImage = () => solution && copyGridImage(solution, "solution-image", "completed-sudoku.png", true);
   const descriptions: Record<Mode, string> = {
-    diagonal: "Normal Sudoku rules apply. Digits along the indicated diagonals cannot repeat.",
-    "anti-diagonal": "Normal Sudoku rules apply. Exactly three distinct numbers appear along each marked diagonal.",
-    "one-of-each": "Normal Sudoku rules apply. Digits along one diagonal cannot repeat, while digits along the other diagonal each appear three times. It is up to the solver to determine which diagonal follows which rule.",
-    "double-diagonal": "Normal sudoku rules apply. Also, digits may not repeat along any of the four straight diagonal lines.",
-    "bent-diagonal": "Normal sudoku rules apply. Each of the four bent diagonals must contain the digits 1-9.",
-    "triple-diagonal": "Normal sudoku rules apply. Digits must not repeat along any marked diagonal.",
-    queen: "Normal sudoku rules apply. Also, 9s cannot see each other along a diagonal",
+    diagonal: "Digits along the indicated diagonals cannot repeat.",
+    "anti-diagonal": "Exactly three distinct numbers appear along each marked diagonal.",
+    "one-of-each": "Digits along one diagonal cannot repeat, while digits along the other diagonal each appear three times. It is up to the solver to determine which diagonal follows which rule.",
+    "double-diagonal": "Digits may not repeat along any of the four straight diagonal lines.",
+    "bent-diagonal": "Each of the four bent diagonals must contain the digits 1-9.",
+    "triple-diagonal": "Digits must not repeat along any marked diagonal.",
+    queen: "9s cannot see each other along a diagonal.",
   };
   const modeOptions: { mode: Mode; label: string }[] = [
     { mode: "diagonal", label: "Diagonal" },
@@ -923,7 +989,7 @@ export default function Home() {
           <div className="mode-picker">
             {modeOptions.map(option => <div className="mode-card" key={option.mode}>
               <button className={mode === option.mode ? "active" : ""} onClick={() => selectMode(option.mode)}>{option.label}</button>
-              <p>{descriptions[option.mode]}</p>
+              {mode === option.mode && <p>{descriptions[option.mode]}</p>}
             </div>)}
           </div>
           <div className="dashboard-difficulty" role="group" aria-label="Required difficulty score range">
@@ -935,15 +1001,16 @@ export default function Home() {
               <input type="number" min="0" step="1" value={maximumDifficulty} onChange={event => setMaximumDifficulty(event.target.value)} disabled={isBuilding} />
             </label>
           </div>
+          <label className="dashboard-digging-method">
+            Digging method:
+            <select value={diggingMethod} onChange={event => setDiggingMethod(event.target.value as DiggingMethod)} disabled={isBuilding || mode === "queen"}>
+              <option value="single">Single cell digging</option>
+              <option value="double">Double cell digging</option>
+            </select>
+            {mode === "queen" && <span>Queen Sudoku uses single-cell digging.</span>}
+          </label>
         </aside>
         <div className="workspace">
-      <label className="digging-method">
-        Digging method:
-        <select value={diggingMethod} onChange={event => setDiggingMethod(event.target.value as DiggingMethod)} disabled={isBuilding}>
-          <option value="single">Single cell digging</option>
-          <option value="double">Double cell digging</option>
-        </select>
-      </label>
       <div className="puzzle-actions">
         <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>
         <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>

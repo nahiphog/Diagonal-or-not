@@ -148,7 +148,7 @@ function generateQueenSudoku(): Grid {
     }
     if (bestRow < 0) return true;
     if (fewest === 0) return false;
-    for (const digit of shuffle(Array.from({ length: 9 }, (_, index) => index + 1).filter(digit => bestChoices & (1 << (digit - 1)))) {
+    for (const digit of shuffle(Array.from({ length: 9 }, (_, index) => index + 1).filter(digit => bestChoices & (1 << (digit - 1))))) {
       const bit = 1 << (digit - 1), house = houseFor(bestRow, bestColumn);
       grid[bestRow][bestColumn] = digit; rows[bestRow] |= bit; columns[bestColumn] |= bit; houses[house] |= bit;
       if (solve()) return true;

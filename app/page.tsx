@@ -8,9 +8,20 @@ type DiggingMethod = "single" | "double";
 type CandidateRemoval = { cell: number; digit: number };
 type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; involved: CandidateRemoval[]; highlightedDiagonals: number[]; message: string };
 type DifficultyRating = { rating: string; score: number; techniques: string[]; logical: boolean; walkthrough: WalkthroughStep[]; tally: Record<string, number>; givens: number[] };
+type QueenDiagonal = { label: string; cells: number[] };
 const emptyGrid = () => Array.from({ length: 9 }, () => Array(9).fill(0));
 const allDigits = 0b111111111;
 const bitCount = (value: number) => value.toString(2).replaceAll("0", "").length;
+const queenDiagonals: QueenDiagonal[] = [
+  ...[0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7].map(offset => ({
+    label: `↘ diagonal (r − c = ${offset})`,
+    cells: Array.from({ length: 9 }, (_, row) => [row, row - offset]).filter(([, column]) => column >= 0 && column < 9).map(([row, column]) => row * 9 + column),
+  })),
+  ...[8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15].map(sum => ({
+    label: `↙ diagonal (r + c = ${sum + 2})`,
+    cells: Array.from({ length: 9 }, (_, row) => [row, sum - row]).filter(([, column]) => column >= 0 && column < 9).map(([row, column]) => row * 9 + column),
+  })),
+];
 // The sudokUI ratings define the technique order: easy methods come first,
 // while the harder ones follow below.
 const sudokUiTechniqueDifficulty: Record<string, number> = {
@@ -790,14 +801,22 @@ function digDiagonal(method: DiggingMethod, protectedCells = Array(81).fill(fals
   return { puzzle, solution };
 }
 
-function digQueen() {
+function digQueen(method: DiggingMethod) {
   const solution = generateGrid("queen");
   const puzzle = solution.map(row => [...row]);
-  const cells = shuffle(Array.from({ length: 81 }, (_, index) => index));
-  for (const cell of cells) {
-    const row = Math.floor(cell / 9), column = cell % 9, value = puzzle[row][column];
+  const cells = method === "single"
+    ? Array.from({ length: 81 }, (_, index) => [Math.floor(index / 9), index % 9])
+    : Array.from({ length: 81 }, (_, index) => [Math.floor(index / 9), index % 9])
+      .filter(([row, column]) => row < 4 || (row === 4 && column <= 4));
+  for (const [row, column] of shuffle(cells.map(([row, column]) => row * 9 + column)).map(cell => [Math.floor(cell / 9), cell % 9])) {
+    const mirrorRow = 8 - row, mirrorColumn = 8 - column;
+    const value = puzzle[row][column], mirrorValue = puzzle[mirrorRow][mirrorColumn];
     puzzle[row][column] = 0;
-    if (countQueenSolutions(puzzle) !== 1) puzzle[row][column] = value;
+    if (method === "double") puzzle[mirrorRow][mirrorColumn] = 0;
+    if (countQueenSolutions(puzzle) !== 1) {
+      puzzle[row][column] = value;
+      if (method === "double") puzzle[mirrorRow][mirrorColumn] = mirrorValue;
+    }
   }
   return { puzzle, solution };
 }
@@ -821,6 +840,7 @@ export default function Home() {
   const [minimumDifficulty, setMinimumDifficulty] = useState("500");
   const [maximumDifficulty, setMaximumDifficulty] = useState("10000");
   const [isBuilderExpanded, setIsBuilderExpanded] = useState(false);
+  const [queenDiagonalIndex, setQueenDiagonalIndex] = useState(0);
   const buildStartedAt = useRef(0);
   const showsDiagonalGuides = mode === "diagonal" || mode === "anti-diagonal" || mode === "one-of-each";
   const generate = () => {
@@ -831,14 +851,14 @@ export default function Home() {
       setGrid(dug.puzzle); setSolution(dug.solution);
       setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution));
     } else if (mode === "queen") {
-      const dug = digQueen();
+      const dug = digQueen(diggingMethod);
       setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(null);
     } else { setGrid(generateGrid(mode)); setSolution(null); setDifficulty(null); }
     setWalkthroughIndex(0);
     setCopiedGrid(null);
     setElapsed(performance.now() - started);
   };
-  const selectMode = (nextMode: Mode) => { setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); if (nextMode === "queen") setDiggingMethod("single"); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
+  const selectMode = (nextMode: Mode) => { setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setQueenDiagonalIndex(0); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
     setIsBuilderExpanded(true);
@@ -988,8 +1008,10 @@ export default function Home() {
           <p className="dashboard-title">Puzzle modes</p>
           <div className="mode-picker">
             {modeOptions.map(option => <div className="mode-card" key={option.mode}>
-              <button className={mode === option.mode ? "active" : ""} onClick={() => selectMode(option.mode)}>{option.label}</button>
-              {mode === option.mode && <p>{descriptions[option.mode]}</p>}
+              <button className={mode === option.mode ? "active" : ""} onClick={() => selectMode(option.mode)}>
+                <span>{option.label}</span>
+                {mode === option.mode && <span className="mode-description">{descriptions[option.mode]}</span>}
+              </button>
             </div>)}
           </div>
           <div className="dashboard-difficulty" role="group" aria-label="Required difficulty score range">
@@ -1003,11 +1025,10 @@ export default function Home() {
           </div>
           <label className="dashboard-digging-method">
             Digging method:
-            <select value={diggingMethod} onChange={event => setDiggingMethod(event.target.value as DiggingMethod)} disabled={isBuilding || mode === "queen"}>
+            <select value={diggingMethod} onChange={event => setDiggingMethod(event.target.value as DiggingMethod)} disabled={isBuilding}>
               <option value="single">Single cell digging</option>
               <option value="double">Double cell digging</option>
             </select>
-            {mode === "queen" && <span>Queen Sudoku uses single-cell digging.</span>}
           </label>
         </aside>
         <div className="workspace">
@@ -1083,6 +1104,29 @@ export default function Home() {
           <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>
         </aside>}
       </div>
+      {mode === "queen" && <section className="queen-diagonal-slide" aria-label="Queen Sudoku diagonal explorer">
+        <h2>Queen diagonals</h2>
+        <p>There are 30 usable diagonals: 15 in each direction. This slide highlights one at a time.</p>
+        <div className="queen-diagonal-layout">
+          <div className="grid queen-diagonal-grid" aria-label={`${queenDiagonals[queenDiagonalIndex].label}, slide ${queenDiagonalIndex + 1} of ${queenDiagonals.length}`}>
+            {grid.flatMap((row, rowIndex) => row.map((value, columnIndex) => {
+              const cell = rowIndex * 9 + columnIndex;
+              return <div className={`cell ${queenDiagonals[queenDiagonalIndex].cells.includes(cell) ? "queen-diagonal-focus" : ""} ${value === 9 ? "queen-nine" : ""}`} key={cell}>{value || ""}</div>;
+            }))}
+          </div>
+          <div className="queen-diagonal-details">
+            <p>Slide {queenDiagonalIndex + 1} of {queenDiagonals.length}</p>
+            <strong>{queenDiagonals[queenDiagonalIndex].label}</strong>
+            <p>{queenDiagonals[queenDiagonalIndex].cells.length} cells</p>
+          </div>
+        </div>
+        <div className="walkthrough-controls queen-diagonal-controls">
+          <button aria-label="First Queen diagonal" onClick={() => setQueenDiagonalIndex(0)} disabled={queenDiagonalIndex === 0}>&lt;&lt;</button>
+          <button aria-label="Previous Queen diagonal" onClick={() => setQueenDiagonalIndex(index => Math.max(0, index - 1))} disabled={queenDiagonalIndex === 0}>&lt;</button>
+          <button aria-label="Next Queen diagonal" onClick={() => setQueenDiagonalIndex(index => Math.min(queenDiagonals.length - 1, index + 1))} disabled={queenDiagonalIndex === queenDiagonals.length - 1}>&gt;</button>
+          <button aria-label="Last Queen diagonal" onClick={() => setQueenDiagonalIndex(queenDiagonals.length - 1)} disabled={queenDiagonalIndex === queenDiagonals.length - 1}>&gt;&gt;</button>
+        </div>
+      </section>}
       <section className="puzzle-loader">
         <label htmlFor="puzzle-input">Load an 81-cell diagonal puzzle</label>
         <textarea id="puzzle-input" value={puzzleInput} onChange={event => setPuzzleInput(event.target.value)} placeholder="Use digits 1–9 and . for blanks" rows={3} />

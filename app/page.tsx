@@ -730,6 +730,10 @@ export default function Home() {
       setBuilderError("Enter whole-number difficulty scores where the maximum is at least the minimum.");
       return;
     }
+    if (protectedCells.every(Boolean) && (minimum > 0 || maximum < 0)) {
+      setBuilderError("All 81 cells are selected, so the finished grid has a difficulty score of 0. Set the minimum difficulty to 0 to build it.");
+      return;
+    }
     buildStartedAt.current = performance.now();
     setBuildAttempts(0); setBuilderError(null); setIsBuilding(true);
   };
@@ -832,13 +836,20 @@ export default function Home() {
   return (
     <main className="page">
       <style>{`.diagonal-guides line { stroke-width: 1.8 !important; stroke-dasharray: 1.5 2.4 !important; }`}</style>
-      <h1>Diagonalize My Sudoku</h1>
-      <div className="mode-picker" aria-label="Puzzle type">
-        <button className={mode === "diagonal" ? "active" : ""} onClick={() => selectMode("diagonal")}>Diagonal</button>
-        <button className={mode === "anti-diagonal" ? "active" : ""} onClick={() => selectMode("anti-diagonal")}>Anti-diagonal</button>
-        <button className={mode === "one-of-each" ? "active" : ""} onClick={() => selectMode("one-of-each")}>One of each</button>
-      </div>
-      <p className="rule-description">{descriptions[mode]}</p>
+      <header className="site-header">
+        <h1>Diagonalize My Sudoku</h1>
+      </header>
+      <div className="app-layout">
+        <aside className="mode-dashboard" aria-label="Puzzle modes">
+          <p className="dashboard-title">Puzzle modes</p>
+          <div className="mode-picker">
+            <button className={mode === "diagonal" ? "active" : ""} onClick={() => selectMode("diagonal")}>Diagonal</button>
+            <button className={mode === "anti-diagonal" ? "active" : ""} onClick={() => selectMode("anti-diagonal")}>Antidiagonal</button>
+            <button className={mode === "one-of-each" ? "active" : ""} onClick={() => selectMode("one-of-each")}>One of each</button>
+          </div>
+        </aside>
+        <div className="workspace">
+          <p className="rule-description">{descriptions[mode]}</p>
       <label className="digging-method">
         Digging method:
         <select value={diggingMethod} onChange={event => setDiggingMethod(event.target.value as DiggingMethod)} disabled={isBuilding}>
@@ -984,6 +995,8 @@ export default function Home() {
           </button>
         </div>
       </section>}
+        </div>
+      </div>
     </main>
   );
 }

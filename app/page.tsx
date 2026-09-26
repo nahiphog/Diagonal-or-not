@@ -31,6 +31,7 @@ const sudokUiTechniqueDifficulty: Record<string, number> = {
   "Locked Candidates (Pointing)": 50,
   "Locked Candidates (Claiming)": 50,
   "Locked Candidates (Diagonal)": 50,
+  "Locked Candidates (9 Diagonal)": 50,
   "Naked Pair": 60,
   "Hidden Pair": 70,
   "Naked Triple": 80,
@@ -455,32 +456,40 @@ function solveDiagonalGrid(startGrid: Grid): Grid | null {
 // human solver).  It adds the two X-Sudoku units to the board model.  As in
 // sudokUI, a score is the sum of the techniques in the solve path; Brute Force
 // is a legitimate last-resort technique worth 10,000 points, not a score cap.
-function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagonals = true): DifficultyRating {
+function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagonal" | "standard" | "queen" = "diagonal"): DifficultyRating {
   const values = startGrid.flat();
   const givens = [...values];
   // Digging has already verified that this is the puzzle's unique diagonal
   // solution. Keep that solution as an invariant for the explanation engine:
   // a valid Snyder elimination can never discard the solution digit.
   const solutionValues = solvedGrid.flat();
-  const units = [
+  const standardUnits = [
     ...Array.from({ length: 9 }, (_, row) => Array.from({ length: 9 }, (_, column) => row * 9 + column)),
     ...Array.from({ length: 9 }, (_, column) => Array.from({ length: 9 }, (_, row) => row * 9 + column)),
     ...Array.from({ length: 9 }, (_, box) => {
       const boxRow = Math.floor(box / 3) * 3, boxColumn = (box % 3) * 3;
       return Array.from({ length: 9 }, (_, cell) => (boxRow + Math.floor(cell / 3)) * 9 + boxColumn + (cell % 3));
     }),
+  ];
+  const diagonalUnits = [
     Array.from({ length: 9 }, (_, index) => index * 10),
     Array.from({ length: 9 }, (_, index) => (index + 1) * 8),
   ];
+  const units = [...standardUnits, ...diagonalUnits];
   // Anti-diagonal uses a global "at most three digits" condition, not a
   // no-repeat house. Its standard deductions must therefore only use rows,
   // columns and boxes; the two diagonals are not peer units in that variant.
-  const activeUnits = hasDistinctDiagonals ? units : units.slice(0, 27);
+  const hasDistinctDiagonals = variant === "diagonal";
+  const activeUnits = hasDistinctDiagonals ? units : standardUnits;
   const unitsFor = Array.from({ length: 81 }, (_, index) => activeUnits.map((unit, unitIndex) => unit.includes(index) ? unitIndex : -1).filter(unit => unit >= 0));
   const peers = Array.from({ length: 81 }, (_, index) => [...new Set(unitsFor[index].flatMap(unit => activeUnits[unit]))].filter(cell => cell !== index));
+  const queenDiagonalPeers = Array.from({ length: 81 }, (_, index) => variant === "queen"
+    ? [...new Set(queenDiagonals.filter(diagonal => diagonal.cells.includes(index)).flatMap(diagonal => diagonal.cells))].filter(cell => cell !== index)
+    : []);
   const candidates = Array.from({ length: 81 }, (_, index) => {
     if (values[index]) return 0;
     const used = new Set(peers[index].map(cell => values[cell]).filter(Boolean));
+    if (variant === "queen" && queenDiagonalPeers[index].some(cell => values[cell] === 9)) used.add(9);
     return Array.from({ length: 9 }, (_, offset) => offset + 1).filter(digit => !used.has(digit)).reduce((mask, digit) => mask | (1 << (digit - 1)), 0);
   });
   const digits = (mask: number) => Array.from({ length: 9 }, (_, offset) => offset + 1).filter(digit => mask & (1 << (digit - 1)));
@@ -492,6 +501,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagon
     values[cell] = digit; candidates[cell] = 0;
     const mask = ~(1 << (digit - 1));
     peers[cell].forEach(peer => { candidates[peer] &= mask; });
+    if (variant === "queen" && digit === 9) queenDiagonalPeers[cell].forEach(peer => { candidates[peer] &= ~(1 << 8); });
     return true;
   };
   const eliminate = (items: Array<[number, number]>) => items.forEach(([cell, digit]) => {
@@ -561,6 +571,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagon
       if (blank.length === 1 && candidates[blank[0]] && add("Full House", () => place(blank[0], digits(candidates[blank[0]])[0]))) moveMade = true;
     }
     if (moveMade) continue;
+
     const naked = values.findIndex((value, cell) => !value && popcount(candidates[cell]) === 1);
     if (naked >= 0 && add("Naked Single", () => place(naked, digits(candidates[naked])[0]))) continue;
     for (const unit of activeUnits) {
@@ -635,6 +646,21 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagon
         const explanation = `On ${unitName(line)}, the green ${digit}s can occur only at ${locations.map(cellName).join(", ")}, all inside ${unitName(boxes[0])}. Therefore ${digit} must occupy that box through this line, making the red ${digit}s elsewhere in the box impossible.`;
         if (targets.length && add("Locked Candidates (Claiming)", () => eliminate(targets.map(cell => [cell, digit])), locations.map(cell => ({ cell, digit })), explanation, line >= 27 ? [line] : [])) moveMade = true;
       }
+    }
+    if (moveMade) continue;
+
+    // Every standard row, column and box contains one 9. When all of a
+    // unit's possible 9s lie on one of Queen Sudoku's 22 relevant diagonals,
+    // that diagonal must receive the unit's 9, so no other cell on it can be
+    // 9. This is the Queen-specific locked-candidate rule, at the same
+    // priority and score as the other locked-candidate techniques.
+    if (variant === "queen") for (const unit of standardUnits) for (const diagonal of queenDiagonals) {
+      const bit = 1 << 8;
+      const locations = unit.filter(cell => !values[cell] && candidates[cell] & bit);
+      if (locations.length < 2 || !locations.every(cell => diagonal.cells.includes(cell))) continue;
+      const targets = diagonal.cells.filter(cell => !unit.includes(cell) && !values[cell] && candidates[cell] & bit);
+      const explanation = `In a standard Sudoku unit, 9 must appear exactly once. Its green candidates at ${locations.map(cellName).join(", ")} all lie on this Queen diagonal, so one of them must be the unit's 9. A second 9 anywhere else on the same diagonal would attack it, so the red 9s are removed.`;
+      if (targets.length && add("Locked Candidates (9 Diagonal)", () => eliminate(targets.map(cell => [cell, 9])), locations.map(cell => ({ cell, digit: 9 })), explanation)) { moveMade = true; break; }
     }
     if (moveMade) continue;
 
@@ -753,7 +779,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagon
       let best = -1, bestOptions: number[] = [];
       for (let index = 0; index < 81; index++) if (!draft[index]) {
         const used = new Set(peers[index].map(peer => draft[peer]).filter(Boolean));
-        const options = Array.from({ length: 9 }, (_, offset) => offset + 1).filter(digit => !used.has(digit));
+        const options = Array.from({ length: 9 }, (_, offset) => offset + 1).filter(digit => !used.has(digit) && (digit !== 9 || variant !== "queen" || !queenDiagonalPeers[index].some(peer => draft[peer] === 9)));
         if (!options.length) return false;
         if (best < 0 || options.length < bestOptions.length) { best = index; bestOptions = options; }
       }
@@ -766,7 +792,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, hasDistinctDiagon
   }
 
   const scores = sudokUiTechniqueDifficulty;
-  const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Locked Candidates (Pointing)": "Medium", "Locked Candidates (Claiming)": "Medium", "Locked Candidates (Diagonal)": "Medium", "Naked Pair": "Medium", "Naked Triple": "Medium", "Hidden Pair": "Medium", "Hidden Triple": "Medium", "Naked Quadruple": "Hard", "Hidden Quadruple": "Hard", "X-Wing": "Hard", "Swordfish": "Hard", "Jellyfish": "Hard", "W-Wing": "Hard", "XY-Wing": "Hard", "XYZ-Wing": "Hard", "Brute Force": "Extreme" };
+  const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Locked Candidates (Pointing)": "Medium", "Locked Candidates (Claiming)": "Medium", "Locked Candidates (Diagonal)": "Medium", "Locked Candidates (9 Diagonal)": "Medium", "Naked Pair": "Medium", "Naked Triple": "Medium", "Hidden Pair": "Medium", "Hidden Triple": "Medium", "Naked Quadruple": "Hard", "Hidden Quadruple": "Hard", "X-Wing": "Hard", "Swordfish": "Hard", "Jellyfish": "Hard", "W-Wing": "Hard", "XY-Wing": "Hard", "XYZ-Wing": "Hard", "Brute Force": "Extreme" };
   const order = ["Beginner", "Easy", "Medium", "Tricky", "Hard", "Unfair", "Extreme", "Nightmare"];
   const maxScore: Record<string, number> = { Beginner: 400, Easy: 800, Medium: 1000, Tricky: 1150, Hard: 1600, Unfair: 1800, Extreme: 3000, Nightmare: Number.MAX_SAFE_INTEGER };
   const score = steps.reduce((total, step) => total + scores[step], 0);
@@ -840,7 +866,6 @@ export default function Home() {
   const [minimumDifficulty, setMinimumDifficulty] = useState("500");
   const [maximumDifficulty, setMaximumDifficulty] = useState("10000");
   const [isBuilderExpanded, setIsBuilderExpanded] = useState(false);
-  const [queenDiagonalIndex, setQueenDiagonalIndex] = useState(0);
   const buildStartedAt = useRef(0);
   const showsDiagonalGuides = mode === "diagonal" || mode === "anti-diagonal" || mode === "one-of-each";
   const generate = () => {
@@ -852,13 +877,16 @@ export default function Home() {
       setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution));
     } else if (mode === "queen") {
       const dug = digQueen(diggingMethod);
-      setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(null);
-    } else { setGrid(generateGrid(mode)); setSolution(null); setDifficulty(null); }
+      setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution, "queen"));
+    } else {
+      const generated = generateGrid(mode);
+      setGrid(generated); setSolution(generated); setDifficulty(rateDiagonalPuzzle(generated, generated, "standard"));
+    }
     setWalkthroughIndex(0);
     setCopiedGrid(null);
     setElapsed(performance.now() - started);
   };
-  const selectMode = (nextMode: Mode) => { setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setQueenDiagonalIndex(0); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
+  const selectMode = (nextMode: Mode) => { setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
     setIsBuilderExpanded(true);
@@ -893,7 +921,7 @@ export default function Home() {
           // The anti-diagonal rating uses standard Sudoku houses only. Its
           // special repeated-diagonal condition is used for uniqueness, but
           // does not create a false distinct-diagonal deduction.
-          const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution, mode === "diagonal");
+          const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution, mode === "diagonal" ? "diagonal" : "standard");
           const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
           if (candidateDifficulty.score < minimum || candidateDifficulty.score > maximum) continue;
           setBuildAttempts(total => total + attemptsThisPass);
@@ -938,11 +966,6 @@ export default function Home() {
     const context = canvas.getContext("2d");
     if (!context) return;
     context.fillStyle = "#ffffff"; context.fillRect(0, 0, size, size);
-    if (mode === "queen") board.flat().forEach((value, cell) => {
-      if (value !== 9) return;
-      context.fillStyle = "#fef3c7";
-      context.fillRect((cell % 9) * cellSize, Math.floor(cell / 9) * cellSize, cellSize, cellSize);
-    });
     context.strokeStyle = "#6b7280"; context.lineWidth = 1;
     for (let line = 1; line < 9; line += 1) {
       context.beginPath(); context.moveTo(line * cellSize, 0); context.lineTo(line * cellSize, size); context.stroke();
@@ -961,7 +984,7 @@ export default function Home() {
     context.setLineDash([]); context.textAlign = "center"; context.textBaseline = "middle"; context.font = "600 58px Arial";
     board.flat().forEach((value, cell) => {
       if (!value) return;
-      context.fillStyle = completed ? (grid.flat()[cell] ? "#111827" : "#2563eb") : mode === "queen" && value === 9 ? "#854d0e" : "#111827";
+      context.fillStyle = completed ? (grid.flat()[cell] ? "#111827" : "#2563eb") : "#111827";
       context.fillText(String(value), (cell % 9 + 0.5) * cellSize, (Math.floor(cell / 9) + 0.54) * cellSize);
     });
     const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
@@ -1077,7 +1100,7 @@ export default function Home() {
         {builderError && <p className="builder-error" role="alert">{builderError}</p>}
         </>}
       </section>
-      <div className={`puzzle-output ${mode !== "one-of-each" && solution && difficulty ? "puzzle-output-built" : ""}`}>
+      <div className={`puzzle-output ${solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">
           <div className="grid-frame">
             {showsDiagonalGuides && <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -1085,7 +1108,7 @@ export default function Home() {
               <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
             </svg>}
             <div className="grid" aria-label="9 by 9 sudoku grid">
-              {grid.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className={`cell ${mode === "queen" && value === 9 ? "queen-nine" : ""}`} key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}
+              {grid.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}
             </div>
           </div>
           <div className="grid-copy-actions">
@@ -1097,7 +1120,7 @@ export default function Home() {
             </button>
           </div>
         </div>
-        {mode !== "one-of-each" && solution && difficulty && <aside className="built-difficulty-panel" aria-label="Puzzle difficulty and technique tally">
+        {solution && difficulty && <aside className="built-difficulty-panel" aria-label="Puzzle difficulty and technique tally">
           <h2>Difficulty rating</h2>
           <p>{grid.flat().filter(Boolean).length} givens · {difficulty.rating} ({difficulty.score}) · {(elapsed ?? 0).toFixed(0)} ms</p>
           <div className="technique-tally">
@@ -1116,46 +1139,23 @@ export default function Home() {
           <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>
         </aside>}
       </div>
-      {mode === "queen" && <section className="queen-diagonal-slide" aria-label="Queen Sudoku diagonal explorer">
-        <h2>Queen diagonals</h2>
-        <p>There are 30 usable diagonals: 15 in each direction. This slide highlights one at a time.</p>
-        <div className="queen-diagonal-layout">
-          <div className="grid queen-diagonal-grid" aria-label={`${queenDiagonals[queenDiagonalIndex].label}, slide ${queenDiagonalIndex + 1} of ${queenDiagonals.length}`}>
-            {grid.flatMap((row, rowIndex) => row.map((value, columnIndex) => {
-              const cell = rowIndex * 9 + columnIndex;
-              return <div className={`cell ${queenDiagonals[queenDiagonalIndex].cells.includes(cell) ? "queen-diagonal-focus" : ""} ${value === 9 ? "queen-nine" : ""}`} key={cell}>{value || ""}</div>;
-            }))}
-          </div>
-          <div className="queen-diagonal-details">
-            <p>Slide {queenDiagonalIndex + 1} of {queenDiagonals.length}</p>
-            <strong>{queenDiagonals[queenDiagonalIndex].label}</strong>
-            <p>{queenDiagonals[queenDiagonalIndex].cells.length} cells</p>
-          </div>
-        </div>
-        <div className="walkthrough-controls queen-diagonal-controls">
-          <button aria-label="First Queen diagonal" onClick={() => setQueenDiagonalIndex(0)} disabled={queenDiagonalIndex === 0}>&lt;&lt;</button>
-          <button aria-label="Previous Queen diagonal" onClick={() => setQueenDiagonalIndex(index => Math.max(0, index - 1))} disabled={queenDiagonalIndex === 0}>&lt;</button>
-          <button aria-label="Next Queen diagonal" onClick={() => setQueenDiagonalIndex(index => Math.min(queenDiagonals.length - 1, index + 1))} disabled={queenDiagonalIndex === queenDiagonals.length - 1}>&gt;</button>
-          <button aria-label="Last Queen diagonal" onClick={() => setQueenDiagonalIndex(queenDiagonals.length - 1)} disabled={queenDiagonalIndex === queenDiagonals.length - 1}>&gt;&gt;</button>
-        </div>
-      </section>}
       <section className="puzzle-loader">
         <label htmlFor="puzzle-input">Load an 81-cell diagonal puzzle</label>
         <textarea id="puzzle-input" value={puzzleInput} onChange={event => setPuzzleInput(event.target.value)} placeholder="Use digits 1–9 and . for blanks" rows={3} />
         <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>
         {inputError && <p role="alert">{inputError}</p>}
       </section>
-      {mode !== "one-of-each" && solution && <section className="dig-results">
+      {solution && <section className="dig-results">
         {difficulty && difficulty.walkthrough.length > 0 && (() => {
           const step = difficulty.walkthrough[walkthroughIndex];
           return <section className="walkthrough" aria-label="Interactive solution walkthrough">
             <h2>Solution walkthrough</h2>
             <div className="walkthrough-layout">
               <div className="grid-frame walkthrough-frame">
-                <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                {showsDiagonalGuides && <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                   <line className={step.highlightedDiagonals.includes(27) ? "diagonal-active" : ""} x1="0" y1="0" x2="50" y2="50" /><line className={step.highlightedDiagonals.includes(27) ? "diagonal-active" : ""} x1="100" y1="100" x2="50" y2="50" />
                   <line className={step.highlightedDiagonals.includes(28) ? "diagonal-active" : ""} x1="100" y1="0" x2="50" y2="50" /><line className={step.highlightedDiagonals.includes(28) ? "diagonal-active" : ""} x1="0" y1="100" x2="50" y2="50" />
-                </svg>
+                </svg>}
                 <div className="grid walkthrough-grid" aria-label={`Board after ${step.technique}`}>
                   {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""}`} key={cell}>
                     {value ? <span className={difficulty.givens[cell] ? "" : "walkthrough-placed"}>{value}</span> : <div className="snyder-notes" aria-label={`Candidates for row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`}>
@@ -1186,10 +1186,10 @@ export default function Home() {
         })()}
         <h2>Completed grid</h2>
         <div className="grid-frame">
-          <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          {showsDiagonalGuides && <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
             <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
-          </svg>
+          </svg>}
           <div className="grid solution-grid" aria-label="Completed sudoku grid">
             {solution.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className={grid[rowIndex][columnIndex] ? "cell given" : "cell solved"} key={`${rowIndex}-${columnIndex}`}>{value}</div>))}
           </div>

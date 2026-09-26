@@ -21,7 +21,7 @@ const queenDiagonals: QueenDiagonal[] = [
     label: `↙ diagonal (r + c = ${sum + 2})`,
     cells: Array.from({ length: 9 }, (_, row) => [row, sum - row]).filter(([, column]) => column >= 0 && column < 9).map(([row, column]) => row * 9 + column),
   })),
-];
+].filter(({ cells }) => new Set(cells.map(cell => Math.floor(Math.floor(cell / 9) / 3) * 3 + Math.floor((cell % 9) / 3))).size > 1);
 // The sudokUI ratings define the technique order: easy methods come first,
 // while the harder ones follow below.
 const sudokUiTechniqueDifficulty: Record<string, number> = {
@@ -1017,10 +1017,22 @@ export default function Home() {
           <div className="dashboard-difficulty" role="group" aria-label="Required difficulty score range">
             <p className="dashboard-title">Build difficulty</p>
             <label>Minimum score
-              <input type="number" min="0" step="1" value={minimumDifficulty} onChange={event => setMinimumDifficulty(event.target.value)} disabled={isBuilding} />
+              <select value={minimumDifficulty} onChange={event => setMinimumDifficulty(event.target.value)} disabled={isBuilding}>
+                <option value="0">0</option>
+                <option value="500">500</option>
+                <option value="600">600</option>
+                <option value="800">800</option>
+                <option value="1000">1000</option>
+              </select>
             </label>
             <label>Maximum score
-              <input type="number" min="0" step="1" value={maximumDifficulty} onChange={event => setMaximumDifficulty(event.target.value)} disabled={isBuilding} />
+              <select value={maximumDifficulty} onChange={event => setMaximumDifficulty(event.target.value)} disabled={isBuilding}>
+                <option value="500">500</option>
+                <option value="1000">1000</option>
+                <option value="2000">2000</option>
+                <option value="10000">10000</option>
+                <option value="100000">100000</option>
+              </select>
             </label>
           </div>
           <label className="dashboard-digging-method">

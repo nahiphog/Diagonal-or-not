@@ -18,6 +18,7 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; letter-spac
 .grid { position: relative; isolation: isolate; display: grid; grid-template-columns: repeat(9, 1fr); border: 5px solid #111827; }
 .grid::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; background: linear-gradient(to right, transparent calc(33.333% - 2.5px), #111827 calc(33.333% - 2.5px), #111827 calc(33.333% + 2.5px), transparent calc(33.333% + 2.5px)), linear-gradient(to right, transparent calc(66.667% - 2.5px), #111827 calc(66.667% - 2.5px), #111827 calc(66.667% + 2.5px), transparent calc(66.667% + 2.5px)), linear-gradient(to bottom, transparent calc(33.333% - 2.5px), #111827 calc(33.333% - 2.5px), #111827 calc(33.333% + 2.5px), transparent calc(33.333% + 2.5px)), linear-gradient(to bottom, transparent calc(66.667% - 2.5px), #111827 calc(66.667% - 2.5px), #111827 calc(66.667% + 2.5px), transparent calc(66.667% + 2.5px)); }
 .cell { position: relative; z-index: 1; aspect-ratio: 1; display: grid; place-items: center; border-right: 1px solid #6b7280; border-bottom: 1px solid #6b7280; font-size: clamp(1.05rem, 3.5vw, 1.8rem); font-weight: 600; }
+.cell.queen-nine { background: #fef3c7; color: #854d0e; }
 .cell:nth-child(3n) { border-right: 1px solid #6b7280; }
 .cell:nth-child(9n) { border-right: 0; }
 .cell:nth-child(n + 19):nth-child(-n + 27), .cell:nth-child(n + 46):nth-child(-n + 54) { border-bottom: 1px solid #6b7280; }

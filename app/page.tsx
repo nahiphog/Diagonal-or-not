@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 type Grid = number[][];
-type Mode = "diagonal" | "anti-diagonal" | "one-of-each";
+type Mode = "diagonal" | "anti-diagonal" | "one-of-each" | "double-diagonal" | "bent-diagonal" | "triple-diagonal" | "queen";
 type DiggingMethod = "single" | "double";
 type CandidateRemoval = { cell: number; digit: number };
 type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; involved: CandidateRemoval[]; highlightedDiagonals: number[]; message: string };
@@ -112,8 +112,57 @@ function generateOneOfEach(): Grid {
   return Math.random() < 0.5 ? mapped : mapped[0].map((_, column) => mapped.map(row => row[column]));
 }
 
+function generateQueenSudoku(): Grid {
+  // Place the nine 9s first as a 9-queen arrangement which also respects
+  // Sudoku columns and 3×3 boxes, then complete the ordinary Sudoku.
+  const grid = emptyGrid();
+  const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0);
+  const queenRows = new Set<number>(), queenColumns = new Set<number>(), queenDescending = new Set<number>(), queenAscending = new Set<number>(), queenHouses = new Set<number>();
+  const houseFor = (row: number, column: number) => Math.floor(row / 3) * 3 + Math.floor(column / 3);
+
+  const placeQueens = (row: number): boolean => {
+    if (row === 9) return true;
+    for (const column of shuffle(Array.from({ length: 9 }, (_, index) => index))) {
+      const house = houseFor(row, column), descending = row - column, ascending = row + column;
+      if (queenRows.has(row) || queenColumns.has(column) || queenDescending.has(descending) || queenAscending.has(ascending) || queenHouses.has(house)) continue;
+      queenRows.add(row); queenColumns.add(column); queenDescending.add(descending); queenAscending.add(ascending); queenHouses.add(house);
+      grid[row][column] = 9;
+      if (placeQueens(row + 1)) return true;
+      grid[row][column] = 0;
+      queenRows.delete(row); queenColumns.delete(column); queenDescending.delete(descending); queenAscending.delete(ascending); queenHouses.delete(house);
+    }
+    return false;
+  };
+  placeQueens(0);
+
+  for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) if (grid[row][column] === 9) {
+    const bit = 1 << 8, house = houseFor(row, column);
+    rows[row] |= bit; columns[column] |= bit; houses[house] |= bit;
+  }
+  const solve = (): boolean => {
+    let bestRow = -1, bestColumn = -1, bestChoices = 0, fewest = 10;
+    for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) if (!grid[row][column]) {
+      const choices = allDigits & ~(rows[row] | columns[column] | houses[houseFor(row, column)]);
+      const count = bitCount(choices);
+      if (count < fewest) { bestRow = row; bestColumn = column; bestChoices = choices; fewest = count; }
+    }
+    if (bestRow < 0) return true;
+    if (fewest === 0) return false;
+    for (const digit of shuffle(Array.from({ length: 9 }, (_, index) => index + 1).filter(digit => bestChoices & (1 << (digit - 1)))) {
+      const bit = 1 << (digit - 1), house = houseFor(bestRow, bestColumn);
+      grid[bestRow][bestColumn] = digit; rows[bestRow] |= bit; columns[bestColumn] |= bit; houses[house] |= bit;
+      if (solve()) return true;
+      grid[bestRow][bestColumn] = 0; rows[bestRow] ^= bit; columns[bestColumn] ^= bit; houses[house] ^= bit;
+    }
+    return false;
+  };
+  solve();
+  return grid;
+}
+
 function generateGrid(mode: Mode): Grid {
   if (mode === "one-of-each") return generateOneOfEach();
+  if (mode === "queen") return generateQueenSudoku();
 
   if (mode === "anti-diagonal") {
     const digitMap = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]);
@@ -709,6 +758,7 @@ export default function Home() {
   const [minimumDifficulty, setMinimumDifficulty] = useState("500");
   const [maximumDifficulty, setMaximumDifficulty] = useState("10000");
   const buildStartedAt = useRef(0);
+  const showsDiagonalGuides = mode === "diagonal" || mode === "anti-diagonal" || mode === "one-of-each";
   const generate = () => {
     const started = performance.now();
     setIsBuiltPuzzle(false);
@@ -724,7 +774,7 @@ export default function Home() {
   const selectMode = (nextMode: Mode) => { setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
-    if (mode === "one-of-each") { setBuilderError("The custom builder currently supports Diagonal and Anti-diagonal puzzles. Select one of those modes to build a puzzle."); return; }
+    if (mode !== "diagonal" && mode !== "anti-diagonal") { setBuilderError("The custom builder currently supports Diagonal and Anti-diagonal puzzles. Select one of those modes to build a puzzle."); return; }
     const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
     if (!Number.isInteger(minimum) || !Number.isInteger(maximum) || minimum < 0 || maximum < minimum) {
       setBuilderError("Enter whole-number difficulty scores where the maximum is at least the minimum.");
@@ -831,6 +881,10 @@ export default function Home() {
     diagonal: "Normal Sudoku rules apply. Digits along the indicated diagonals cannot repeat.",
     "anti-diagonal": "Normal Sudoku rules apply. Exactly three distinct numbers appear along each marked diagonal.",
     "one-of-each": "Normal Sudoku rules apply. Digits along one diagonal cannot repeat, while digits along the other diagonal each appear three times. It is up to the solver to determine which diagonal follows which rule.",
+    "double-diagonal": "Normal sudoku rules apply. Also, digits may not repeat along any of the four straight diagonal lines.",
+    "bent-diagonal": "Normal sudoku rules apply. Each of the four bent diagonals must contain the digits 1-9.",
+    "triple-diagonal": "Normal sudoku rules apply. Digits must not repeat along any marked diagonal.",
+    queen: "Normal sudoku rules apply. Also, 9s cannot see each other along a diagonal",
   };
 
   return (
@@ -844,8 +898,12 @@ export default function Home() {
           <p className="dashboard-title">Puzzle modes</p>
           <div className="mode-picker">
             <button className={mode === "diagonal" ? "active" : ""} onClick={() => selectMode("diagonal")}>Diagonal</button>
-            <button className={mode === "anti-diagonal" ? "active" : ""} onClick={() => selectMode("anti-diagonal")}>Antidiagonal</button>
+            <button className={mode === "anti-diagonal" ? "active" : ""} onClick={() => selectMode("anti-diagonal")}>Anti-diagonal</button>
             <button className={mode === "one-of-each" ? "active" : ""} onClick={() => selectMode("one-of-each")}>One of each</button>
+            <button className={mode === "double-diagonal" ? "active" : ""} onClick={() => selectMode("double-diagonal")}>Double Diagonal</button>
+            <button className={mode === "bent-diagonal" ? "active" : ""} onClick={() => selectMode("bent-diagonal")}>Bent diagonal</button>
+            <button className={mode === "triple-diagonal" ? "active" : ""} onClick={() => selectMode("triple-diagonal")}>Triple diagonal</button>
+            <button className={mode === "queen" ? "active" : ""} onClick={() => selectMode("queen")}>Queen sudoku</button>
           </div>
         </aside>
         <div className="workspace">
@@ -878,10 +936,10 @@ export default function Home() {
           ? "The builder keeps trying until the exact clue pattern has one Anti-diagonal solution. Its score uses standard Sudoku techniques without treating either repeating diagonal as a no-repeat house."
           : "The builder keeps trying until the exact clue pattern has one solution and its score falls within this range."}</p>
         <div className="grid-frame builder-frame">
-          <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          {showsDiagonalGuides && <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
             <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
-          </svg>
+          </svg>}
           <div className="grid builder-grid" aria-label="Select required givens">
             {protectedCells.map((selected, cell) => <button className={`cell builder-cell ${selected ? "protected" : ""}`} aria-pressed={selected} aria-label={`${selected ? "Keep" : "Allow removal of"} row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`} key={cell} onClick={() => toggleProtectedCell(cell)} disabled={isBuilding}>{selected ? "•" : ""}</button>)}
           </div>
@@ -896,12 +954,12 @@ export default function Home() {
       <div className={`puzzle-output ${mode !== "one-of-each" && solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">
           <div className="grid-frame">
-            <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            {showsDiagonalGuides && <svg className="diagonal-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
               <line x1="0" y1="0" x2="50" y2="50" /><line x1="100" y1="100" x2="50" y2="50" />
               <line x1="100" y1="0" x2="50" y2="50" /><line x1="0" y1="100" x2="50" y2="50" />
-            </svg>
+            </svg>}
             <div className="grid" aria-label="9 by 9 sudoku grid">
-              {grid.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}
+              {grid.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className={`cell ${mode === "queen" && value === 9 ? "queen-nine" : ""}`} key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}
             </div>
           </div>
           <button

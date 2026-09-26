@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type Grid = number[][];
-type Mode = "diagonal" | "anti-diagonal" | "one-of-each" | "double-diagonal" | "bent-diagonal" | "triple-diagonal" | "queen";
+export type Mode = "diagonal" | "anti-diagonal" | "one-of-each" | "double-diagonal" | "bent-diagonal" | "triple-diagonal" | "queen";
 type DiggingMethod = "single" | "double";
 type CandidateRemoval = { cell: number; digit: number };
 type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; involved: CandidateRemoval[]; highlightedDiagonals: number[]; message: string };
@@ -12,6 +13,15 @@ type QueenDiagonal = { label: string; cells: number[] };
 const emptyGrid = () => Array.from({ length: 9 }, () => Array(9).fill(0));
 const allDigits = 0b111111111;
 const bitCount = (value: number) => value.toString(2).replaceAll("0", "").length;
+export const modePaths: Record<Mode, string> = {
+  diagonal: "/diagonal/",
+  "anti-diagonal": "/anti_diagonal/",
+  "one-of-each": "/one_of_each/",
+  "double-diagonal": "/double_diagonal/",
+  "bent-diagonal": "/bent_diagonal/",
+  "triple-diagonal": "/triple_diagonal/",
+  queen: "/queen_sudoku/",
+};
 const queenDiagonals: QueenDiagonal[] = [
   ...[0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7].map(offset => ({
     label: `↘ diagonal (r − c = ${offset})`,
@@ -847,8 +857,9 @@ function digQueen(method: DiggingMethod) {
   return { puzzle, solution };
 }
 
-export default function Home() {
-  const [mode, setMode] = useState<Mode>("diagonal");
+export default function Home({ initialMode = "diagonal" }: { initialMode?: Mode }) {
+  const router = useRouter();
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [grid, setGrid] = useState<Grid>(emptyGrid);
   const [solution, setSolution] = useState<Grid | null>(null);
   const [elapsed, setElapsed] = useState<number | null>(null);
@@ -866,7 +877,12 @@ export default function Home() {
   const [minimumDifficulty, setMinimumDifficulty] = useState("500");
   const [maximumDifficulty, setMaximumDifficulty] = useState("10000");
   const [isBuilderExpanded, setIsBuilderExpanded] = useState(false);
+  const [simulationTrials, setSimulationTrials] = useState("1000");
+  const [simulationTally, setSimulationTally] = useState<Record<number, number>>({});
+  const [completedSimulationTrials, setCompletedSimulationTrials] = useState(0);
+  const [isSimulating, setIsSimulating] = useState(false);
   const buildStartedAt = useRef(0);
+  const simulationCancelled = useRef(false);
   const showsDiagonalGuides = mode === "diagonal" || mode === "anti-diagonal" || mode === "one-of-each";
   const generate = () => {
     const started = performance.now();
@@ -886,7 +902,7 @@ export default function Home() {
     setCopiedGrid(null);
     setElapsed(performance.now() - started);
   };
-  const selectMode = (nextMode: Mode) => { setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
+  const selectMode = (nextMode: Mode) => { simulationCancelled.current = true; setIsSimulating(false); setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); router.push(modePaths[nextMode]); };
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
     setIsBuilderExpanded(true);
@@ -904,6 +920,27 @@ export default function Home() {
     setBuildAttempts(0); setBuilderError(null); setIsBuilding(true);
   };
   const haltBuilding = () => { setIsBuilding(false); setBuilderError(`Building halted after ${buildAttempts} attempted completed grids.`); };
+  const runQueenSimulation = () => {
+    const trials = Number(simulationTrials);
+    if (!Number.isInteger(trials) || trials < 1 || trials > 10000) return;
+    simulationCancelled.current = false;
+    setIsSimulating(true); setSimulationTally({}); setCompletedSimulationTrials(0);
+    const tally: Record<number, number> = {};
+    let completed = 0;
+    const runBatch = () => {
+      const batchSize = Math.min(5, trials - completed);
+      for (let index = 0; index < batchSize; index++) {
+        const result = digQueen("single");
+        const givens = result.puzzle.flat().filter(Boolean).length;
+        tally[givens] = (tally[givens] ?? 0) + 1;
+      }
+      completed += batchSize;
+      setSimulationTally({ ...tally }); setCompletedSimulationTrials(completed);
+      if (simulationCancelled.current || completed >= trials) { setIsSimulating(false); return; }
+      window.setTimeout(runBatch, 0);
+    };
+    window.setTimeout(runBatch, 0);
+  };
   useEffect(() => {
     if (!isBuilding) return;
     let cancelled = false;
@@ -1100,6 +1137,33 @@ export default function Home() {
         {builderError && <p className="builder-error" role="alert">{builderError}</p>}
         </>}
       </section>
+      {mode === "queen" && <section className="queen-simulation" aria-label="Queen Sudoku simulation">
+        <h2>Simulation</h2>
+        <p>Run repeated Queen Sudoku generations using single cell digging only.</p>
+        <div className="simulation-actions">
+          <label htmlFor="simulation-trials">Trials
+            <input id="simulation-trials" type="number" min="1" max="10000" step="1" value={simulationTrials} onChange={event => setSimulationTrials(event.target.value)} disabled={isSimulating} />
+          </label>
+          <button className="generate-button" onClick={runQueenSimulation} disabled={isSimulating}>Run simulation</button>
+          <button className="halt-button" onClick={() => { simulationCancelled.current = true; }} disabled={!isSimulating}>Halt simulation</button>
+        </div>
+        {completedSimulationTrials > 0 && (() => {
+          const bins = Object.entries(simulationTally).map(([givens, tally]) => ({ givens: Number(givens), tally })).sort((first, second) => first.givens - second.givens);
+          const maximum = Math.max(...bins.map(bin => bin.tally), 1);
+          return <div className="simulation-chart" aria-label="Histogram of empirical tally by number of given cells">
+            <div className="simulation-y-axis"><strong>Empirical tally</strong><span>{maximum}</span><span>0</span></div>
+            <div className="simulation-plot">
+              <div className="simulation-bars">{bins.map(bin => <div className="simulation-bar-column" key={bin.givens}>
+                <span className="simulation-bar-value">{bin.tally}</span>
+                <div className="simulation-bar" style={{ height: `${Math.max(4, (bin.tally / maximum) * 100)}%` }} />
+                <span className="simulation-bin-label">{bin.givens}</span>
+              </div>)}</div>
+              <strong className="simulation-x-axis">Number of given cells</strong>
+            </div>
+            <p className="simulation-progress">{completedSimulationTrials} of {simulationTrials} trials complete{isSimulating ? "…" : "."}</p>
+          </div>;
+        })()}
+      </section>}
       <div className={`puzzle-output ${solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">
           <div className="grid-frame">

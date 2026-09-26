@@ -747,7 +747,7 @@ export default function Home() {
   const [diggingMethod, setDiggingMethod] = useState<DiggingMethod>("double");
   const [difficulty, setDifficulty] = useState<DifficultyRating | null>(null);
   const [walkthroughIndex, setWalkthroughIndex] = useState(0);
-  const [copiedGrid, setCopiedGrid] = useState<"puzzle" | "solution" | "solution-image" | "solution-image-download" | null>(null);
+  const [copiedGrid, setCopiedGrid] = useState<"puzzle" | "puzzle-image" | "puzzle-image-download" | "solution" | "solution-image" | "solution-image-download" | null>(null);
   const [puzzleInput, setPuzzleInput] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
   const [protectedCells, setProtectedCells] = useState<boolean[]>(() => Array(81).fill(false));
@@ -757,6 +757,7 @@ export default function Home() {
   const [buildAttempts, setBuildAttempts] = useState(0);
   const [minimumDifficulty, setMinimumDifficulty] = useState("500");
   const [maximumDifficulty, setMaximumDifficulty] = useState("10000");
+  const [isBuilderExpanded, setIsBuilderExpanded] = useState(false);
   const buildStartedAt = useRef(0);
   const showsDiagonalGuides = mode === "diagonal" || mode === "anti-diagonal" || mode === "one-of-each";
   const generate = () => {
@@ -774,6 +775,7 @@ export default function Home() {
   const selectMode = (nextMode: Mode) => { setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); };
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
+    setIsBuilderExpanded(true);
     if (mode !== "diagonal" && mode !== "anti-diagonal") { setBuilderError("The custom builder currently supports Diagonal and Anti-diagonal puzzles. Select one of those modes to build a puzzle."); return; }
     const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
     if (!Number.isInteger(minimum) || !Number.isInteger(maximum) || minimum < 0 || maximum < minimum) {
@@ -838,14 +840,23 @@ export default function Home() {
     await navigator.clipboard.writeText(board.flat().map(value => value || ".").join(""));
     setCopiedGrid(kind);
   };
-  const copySolutionImage = async () => {
-    if (!solution) return;
+  const copyGridImage = async (
+    board: Grid,
+    kind: "puzzle-image" | "puzzle-image-download" | "solution-image" | "solution-image-download",
+    filename: string,
+    completed = false,
+  ) => {
     const size = 900, cellSize = size / 9;
     const canvas = document.createElement("canvas");
     canvas.width = size; canvas.height = size;
     const context = canvas.getContext("2d");
     if (!context) return;
     context.fillStyle = "#ffffff"; context.fillRect(0, 0, size, size);
+    if (mode === "queen") board.flat().forEach((value, cell) => {
+      if (value !== 9) return;
+      context.fillStyle = "#fef3c7";
+      context.fillRect((cell % 9) * cellSize, Math.floor(cell / 9) * cellSize, cellSize, cellSize);
+    });
     context.strokeStyle = "#6b7280"; context.lineWidth = 1;
     for (let line = 1; line < 9; line += 1) {
       context.beginPath(); context.moveTo(line * cellSize, 0); context.lineTo(line * cellSize, size); context.stroke();
@@ -856,27 +867,31 @@ export default function Home() {
       context.beginPath(); context.moveTo(line * cellSize, 0); context.lineTo(line * cellSize, size); context.stroke();
       context.beginPath(); context.moveTo(0, line * cellSize); context.lineTo(size, line * cellSize); context.stroke();
     }
-    context.strokeStyle = "#2563eb"; context.lineWidth = 5; context.setLineDash([14, 20]);
-    context.beginPath(); context.moveTo(0, 0); context.lineTo(size, size); context.stroke();
-    context.beginPath(); context.moveTo(size, 0); context.lineTo(0, size); context.stroke();
+    if (showsDiagonalGuides) {
+      context.strokeStyle = "#2563eb"; context.lineWidth = 5; context.setLineDash([14, 20]);
+      context.beginPath(); context.moveTo(0, 0); context.lineTo(size, size); context.stroke();
+      context.beginPath(); context.moveTo(size, 0); context.lineTo(0, size); context.stroke();
+    }
     context.setLineDash([]); context.textAlign = "center"; context.textBaseline = "middle"; context.font = "600 58px Arial";
-    solution.flat().forEach((value, cell) => {
-      context.fillStyle = grid.flat()[cell] ? "#111827" : "#2563eb";
+    board.flat().forEach((value, cell) => {
+      if (!value) return;
+      context.fillStyle = completed ? (grid.flat()[cell] ? "#111827" : "#2563eb") : mode === "queen" && value === 9 ? "#854d0e" : "#111827";
       context.fillText(String(value), (cell % 9 + 0.5) * cellSize, (Math.floor(cell / 9) + 0.54) * cellSize);
     });
     const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
     if (!blob) return;
     if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      setCopiedGrid("solution-image");
+      setCopiedGrid(kind.endsWith("-download") ? kind.replace("-download", "") as "puzzle-image" | "solution-image" : kind);
       return;
     }
     const downloadUrl = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = downloadUrl; link.download = "completed-diagonal-sudoku.png"; link.click();
+    link.href = downloadUrl; link.download = filename; link.click();
     URL.revokeObjectURL(downloadUrl);
-    setCopiedGrid("solution-image-download");
+    setCopiedGrid(kind.endsWith("-download") ? kind : `${kind}-download` as "puzzle-image-download" | "solution-image-download");
   };
+  const copySolutionImage = () => solution && copyGridImage(solution, "solution-image", "completed-sudoku.png", true);
   const descriptions: Record<Mode, string> = {
     diagonal: "Normal Sudoku rules apply. Digits along the indicated diagonals cannot repeat.",
     "anti-diagonal": "Normal Sudoku rules apply. Exactly three distinct numbers appear along each marked diagonal.",
@@ -886,6 +901,15 @@ export default function Home() {
     "triple-diagonal": "Normal sudoku rules apply. Digits must not repeat along any marked diagonal.",
     queen: "Normal sudoku rules apply. Also, 9s cannot see each other along a diagonal",
   };
+  const modeOptions: { mode: Mode; label: string }[] = [
+    { mode: "diagonal", label: "Diagonal" },
+    { mode: "anti-diagonal", label: "Anti-diagonal" },
+    { mode: "one-of-each", label: "One of each" },
+    { mode: "double-diagonal", label: "Double Diagonal" },
+    { mode: "bent-diagonal", label: "Bent diagonal" },
+    { mode: "triple-diagonal", label: "Triple diagonal" },
+    { mode: "queen", label: "Queen sudoku" },
+  ];
 
   return (
     <main className="page">
@@ -897,17 +921,22 @@ export default function Home() {
         <aside className="mode-dashboard" aria-label="Puzzle modes">
           <p className="dashboard-title">Puzzle modes</p>
           <div className="mode-picker">
-            <button className={mode === "diagonal" ? "active" : ""} onClick={() => selectMode("diagonal")}>Diagonal</button>
-            <button className={mode === "anti-diagonal" ? "active" : ""} onClick={() => selectMode("anti-diagonal")}>Anti-diagonal</button>
-            <button className={mode === "one-of-each" ? "active" : ""} onClick={() => selectMode("one-of-each")}>One of each</button>
-            <button className={mode === "double-diagonal" ? "active" : ""} onClick={() => selectMode("double-diagonal")}>Double Diagonal</button>
-            <button className={mode === "bent-diagonal" ? "active" : ""} onClick={() => selectMode("bent-diagonal")}>Bent diagonal</button>
-            <button className={mode === "triple-diagonal" ? "active" : ""} onClick={() => selectMode("triple-diagonal")}>Triple diagonal</button>
-            <button className={mode === "queen" ? "active" : ""} onClick={() => selectMode("queen")}>Queen sudoku</button>
+            {modeOptions.map(option => <div className="mode-card" key={option.mode}>
+              <button className={mode === option.mode ? "active" : ""} onClick={() => selectMode(option.mode)}>{option.label}</button>
+              <p>{descriptions[option.mode]}</p>
+            </div>)}
+          </div>
+          <div className="dashboard-difficulty" role="group" aria-label="Required difficulty score range">
+            <p className="dashboard-title">Build difficulty</p>
+            <label>Minimum score
+              <input type="number" min="0" step="1" value={minimumDifficulty} onChange={event => setMinimumDifficulty(event.target.value)} disabled={isBuilding} />
+            </label>
+            <label>Maximum score
+              <input type="number" min="0" step="1" value={maximumDifficulty} onChange={event => setMaximumDifficulty(event.target.value)} disabled={isBuilding} />
+            </label>
           </div>
         </aside>
         <div className="workspace">
-          <p className="rule-description">{descriptions[mode]}</p>
       <label className="digging-method">
         Digging method:
         <select value={diggingMethod} onChange={event => setDiggingMethod(event.target.value as DiggingMethod)} disabled={isBuilding}>
@@ -921,17 +950,13 @@ export default function Home() {
         <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
       </div>
       <section className="puzzle-builder" aria-label="Build a puzzle">
-        <h2>Build a puzzle</h2>
+        <div className="builder-heading">
+          <h2>Build a puzzle</h2>
+          <button className="builder-caret" type="button" onClick={() => setIsBuilderExpanded(expanded => !expanded)} aria-expanded={isBuilderExpanded} aria-label={`${isBuilderExpanded ? "Hide" : "Show"} Build a puzzle settings`}>{isBuilderExpanded ? "⌃" : "⌄"}</button>
+        </div>
+        {isBuilderExpanded && <>
         <p>Select the positions that must be givens. Green cells are the complete clue pattern: every other cell will be blank in the finished puzzle.</p>
         <p className="builder-count">{protectedCells.filter(Boolean).length} protected givens</p>
-        <div className="difficulty-range" role="group" aria-label="Required difficulty score range">
-          <label>Minimum difficulty score
-            <input type="number" min="0" step="1" value={minimumDifficulty} onChange={event => setMinimumDifficulty(event.target.value)} disabled={isBuilding} />
-          </label>
-          <label>Maximum difficulty score
-            <input type="number" min="0" step="1" value={maximumDifficulty} onChange={event => setMaximumDifficulty(event.target.value)} disabled={isBuilding} />
-          </label>
-        </div>
         <p className="difficulty-range-note">{mode === "anti-diagonal"
           ? "The builder keeps trying until the exact clue pattern has one Anti-diagonal solution. Its score uses standard Sudoku techniques without treating either repeating diagonal as a no-repeat house."
           : "The builder keeps trying until the exact clue pattern has one solution and its score falls within this range."}</p>
@@ -950,6 +975,7 @@ export default function Home() {
         </div>
         {isBuilding && <p className="builder-status" role="status">Building from this exact pattern · {buildAttempts} completed grids tested.</p>}
         {builderError && <p className="builder-error" role="alert">{builderError}</p>}
+        </>}
       </section>
       <div className={`puzzle-output ${mode !== "one-of-each" && solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">
@@ -962,13 +988,14 @@ export default function Home() {
               {grid.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className={`cell ${mode === "queen" && value === 9 ? "queen-nine" : ""}`} key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}
             </div>
           </div>
-          <button
-            className="copy-grid-button"
-            onClick={() => copyGrid(grid, "puzzle")}
-            disabled={!grid.flat().some(Boolean)}
-          >
-            {copiedGrid === "puzzle" ? "Copied 81 cells" : isBuiltPuzzle ? "Copy built 81-cell puzzle" : "Copy 81-cell grid"}
-          </button>
+          <div className="grid-copy-actions">
+            <button className="copy-grid-button" onClick={() => copyGrid(grid, "puzzle")} disabled={!grid.flat().some(Boolean)}>
+              {copiedGrid === "puzzle" ? "Copied 81 cells" : isBuiltPuzzle ? "Copy built 81-cell puzzle" : "Copy 81-cell grid"}
+            </button>
+            <button className="copy-grid-button" onClick={() => copyGridImage(grid, "puzzle-image", "sudoku-grid.png")} disabled={!grid.flat().some(Boolean)}>
+              {copiedGrid === "puzzle-image" ? "Copied grid image" : copiedGrid === "puzzle-image-download" ? "Downloaded grid image" : "Copy grid image"}
+            </button>
+          </div>
         </div>
         {mode !== "one-of-each" && solution && difficulty && <aside className="built-difficulty-panel" aria-label="Puzzle difficulty and technique tally">
           <h2>Difficulty rating</h2>
@@ -1027,10 +1054,10 @@ export default function Home() {
               </aside>
             </div>
             <div className="walkthrough-controls">
-              <button onClick={() => setWalkthroughIndex(0)} disabled={walkthroughIndex === 0}>Go to step 0</button>
-              <button onClick={() => setWalkthroughIndex(index => Math.max(0, index - 1))} disabled={walkthroughIndex === 0}>Previous</button>
-              <button onClick={() => setWalkthroughIndex(index => Math.min(difficulty.walkthrough.length - 1, index + 1))} disabled={walkthroughIndex === difficulty.walkthrough.length - 1}>Next</button>
-              <button onClick={() => setWalkthroughIndex(difficulty.walkthrough.length - 1)} disabled={walkthroughIndex === difficulty.walkthrough.length - 1}>Go to last step</button>
+              <button aria-label="Go to step 0" title="Go to step 0" onClick={() => setWalkthroughIndex(0)} disabled={walkthroughIndex === 0}>&lt;&lt;</button>
+              <button aria-label="Previous step" title="Previous step" onClick={() => setWalkthroughIndex(index => Math.max(0, index - 1))} disabled={walkthroughIndex === 0}>&lt;</button>
+              <button aria-label="Next step" title="Next step" onClick={() => setWalkthroughIndex(index => Math.min(difficulty.walkthrough.length - 1, index + 1))} disabled={walkthroughIndex === difficulty.walkthrough.length - 1}>&gt;</button>
+              <button aria-label="Go to last step" title="Go to last step" onClick={() => setWalkthroughIndex(difficulty.walkthrough.length - 1)} disabled={walkthroughIndex === difficulty.walkthrough.length - 1}>&gt;&gt;</button>
             </div>
           </section>;
         })()}

@@ -1158,6 +1158,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
                 <option value="600">600</option>
                 <option value="800">800</option>
                 <option value="1000">1000</option>
+                <option value="1100">1100</option>
               </select>
             </label>
             <label>Maximum score

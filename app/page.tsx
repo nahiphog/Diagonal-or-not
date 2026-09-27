@@ -515,7 +515,7 @@ function solveQueenGrid(startGrid: Grid): Grid | null {
 // human solver).  It adds the two X-Sudoku units to the board model.  As in
 // sudokUI, a score is the sum of the techniques in the solve path; Brute Force
 // is a legitimate last-resort technique worth 10,000 points, not a score cap.
-function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagonal" | "standard" | "queen" = "diagonal"): DifficultyRating {
+function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagonal" | "anti-diagonal" | "standard" | "queen" = "diagonal"): DifficultyRating {
   const values = startGrid.flat();
   const givens = [...values];
   // Digging has already verified that this is the puzzle's unique diagonal
@@ -536,9 +536,10 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
   ];
   const units = [...standardUnits, ...diagonalUnits];
   // Anti-diagonal uses a global "at most three digits" condition, not a
-  // no-repeat house. Its standard deductions must therefore only use rows,
-  // columns and boxes; the two diagonals are not peer units in that variant.
-  const hasDistinctDiagonals = variant === "diagonal";
+  // no-repeat house. Its rating engine includes the two diagonals as peer units
+  // for all techniques except "Locked Candidates (Diagonal)", which is
+  // explicitly disabled because it assumes each diagonal contains 1-9 exactly once.
+  const hasDistinctDiagonals = variant === "diagonal" || variant === "anti-diagonal";
   const activeUnits = hasDistinctDiagonals ? units : standardUnits;
   const unitsFor = Array.from({ length: 81 }, (_, index) => activeUnits.map((unit, unitIndex) => unit.includes(index) ? unitIndex : -1).filter(unit => unit >= 0));
   const peers = Array.from({ length: 81 }, (_, index) => [...new Set(unitsFor[index].flatMap(unit => activeUnits[unit]))].filter(cell => cell !== index));
@@ -732,7 +733,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
     // This rule assumes that each diagonal contains every digit exactly once.
     // Anti-diagonal Sudoku permits repeats on both diagonals, so this finder
     // is explicitly disabled for an Anti-diagonal walkthrough.
-    if (hasDistinctDiagonals) for (const diagonal of [27, 28]) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
+    if (variant === "diagonal") for (const diagonal of [27, 28]) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
       const bit = 1 << (digit - 1), locations = units[diagonal].filter(cell => !values[cell] && candidates[cell] & bit);
       if (locations.length !== 2) continue;
       const firstPeers = new Set(peers[locations[0]]);
@@ -962,7 +963,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
       const dug = digDiagonal(diggingMethod);
       setGrid(dug.puzzle); setSolution(dug.solution);
       setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution));
-    } else if (mode === "anti-diagonal") { const dug = digAntiDiagonal(diggingMethod); setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution, "standard")); } else if (mode === "queen") {
+    } else if (mode === "anti-diagonal") { const dug = digAntiDiagonal(diggingMethod); setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution, "anti-diagonal")); } else if (mode === "queen") {
       const dug = digQueen(diggingMethod);
       setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution, "queen"));
     } else {
@@ -1027,7 +1028,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
           // The anti-diagonal rating uses standard Sudoku houses only. Its
           // special repeated-diagonal condition is used for uniqueness, but
           // does not create a false distinct-diagonal deduction.
-          const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution, mode === "diagonal" ? "diagonal" : mode === "queen" ? "queen" : "standard");
+          const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution, mode === "diagonal" ? "diagonal" : mode === "anti-diagonal" ? "anti-diagonal" : mode === "queen" ? "queen" : "standard");
           const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
           if (candidateDifficulty.score < minimum || candidateDifficulty.score > maximum) continue;
           setBuildAttempts(total => total + attemptsThisPass);

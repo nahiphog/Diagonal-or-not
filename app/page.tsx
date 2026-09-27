@@ -988,7 +988,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
       const result = digQueen("single");
       const givens = result.puzzle.flat().filter(Boolean).length;
       tally[givens] = (tally[givens] ?? 0) + 1;
-      if (givens <= Number(simulationOutputLimit)) { setSimulationOutput(result.puzzle); setSimulationOutputGivens(givens); }
+      if (givens <= Number(simulationOutputLimit)) { setSimulationOutputs(outputs => [...outputs, { puzzle: result.puzzle, givens }]); }
       completed += 1;
       setSimulationTally({ ...tally }); setCompletedSimulationTrials(completed);
       if (simulationCancelled.current || completed >= trials) { setIsSimulating(false); return; }
@@ -1225,7 +1225,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
             <p className="simulation-progress">{completedSimulationTrials} of {simulationTrials} trials complete{isSimulating ? "…" : "."}</p>
           </div>;
         })()}
-        <div className="simulation-output" aria-live="polite"><h3>Selected simulation grid</h3>{simulationOutput ? <><p>{simulationOutputGivens} givens — at most {simulationOutputLimit} selected.</p><div className="grid-frame"><div className="grid" aria-label="Selected Queen Sudoku simulation grid">{simulationOutput.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}</div></div></> : <p>When a generated puzzle has at most {simulationOutputLimit} givens, its grid will appear here.</p>}</div>
+        <div className="simulation-output" aria-live="polite"><h3>Qualifying simulation grids</h3>{simulationOutputs.length ? <><p>{simulationOutputs.length} grid{simulationOutputs.length === 1 ? "" : "s"} with at most {simulationOutputLimit} givens.</p><div className="simulation-grid-list">{simulationOutputs.map(({ puzzle, givens }, outputIndex) => <div className="simulation-grid-card" key={`${givens}-${outputIndex}`}><p>Trial grid {outputIndex + 1}: {givens} givens</p><div className="grid-frame"><div className="grid" aria-label={`Queen Sudoku simulation grid ${outputIndex + 1}`}>{puzzle.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}</div></div></div>)}</div></> : <p>Every generated grid with at most {simulationOutputLimit} givens will appear here.</p>}</div>
       </section>}
       <div className={`puzzle-output ${solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">

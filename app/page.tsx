@@ -993,7 +993,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
   const haltBuilding = () => { setIsBuilding(false); setBuilderError(`Building halted after ${buildAttempts} attempted completed grids.`); };
   const runQueenSimulation = () => {
     const trials = Number(simulationTrials);
-    if (!Number.isInteger(trials) || trials < 1 || trials > 10000) return;
+    if (!Number.isInteger(trials) || trials < 1) return;
     simulationCancelled.current = false;
     setIsSimulating(true); setSimulationTally({}); setCompletedSimulationTrials(0); setSimulationOutputs([]);
     const tally: Record<number, number> = {};
@@ -1223,7 +1223,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         <p>Run repeated Queen Sudoku generations using single cell digging only. The histogram refreshes after every new puzzle.</p>
         <div className="simulation-actions">
           <label htmlFor="simulation-trials">Trials
-            <input id="simulation-trials" type="number" min="1" max="10000" step="1" value={simulationTrials} onChange={event => setSimulationTrials(event.target.value)} disabled={isSimulating} />
+            <input id="simulation-trials" type="number" min="1" step="1" value={simulationTrials} onChange={event => setSimulationTrials(event.target.value)} disabled={isSimulating} />
           </label>
           <button className="generate-button" onClick={runQueenSimulation} disabled={isSimulating}>Run simulation</button>
           <button className="halt-button" onClick={() => { simulationCancelled.current = true; }} disabled={!isSimulating}>Halt simulation</button>

@@ -151,3 +151,7 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; letter-spac
   .walkthrough-layout { grid-template-columns: 1fr; }
   .walkthrough-details { padding: 0; }
 }
+.simulation-grid-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 1rem; }
+.simulation-grid-card { min-width: 0; }
+.simulation-grid-card > p { margin: 0 0 0.4rem; color: #374151; font-size: 0.8rem; font-weight: 700; }
+.simulation-grid-card .grid-frame { width: 100%; }

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 
 type Grid = number[][];
 export type Mode = "diagonal" | "anti-diagonal" | "one-of-each" | "double-diagonal" | "bent-diagonal" | "triple-diagonal" | "queen";
-export type QueenSubpage = "randomly-generate" | "custom-build" | "import-grid" | "simulation";
 type DiggingMethod = "single" | "double";
 type CandidateRemoval = { cell: number; digit: number };
 type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; involved: CandidateRemoval[]; highlightedDiagonals: number[]; message: string };
@@ -462,48 +461,6 @@ function solveDiagonalGrid(startGrid: Grid): Grid | null {
   return search() ? grid : null;
 }
 
-function solveQueenGrid(startGrid: Grid): Grid | null {
-  const grid = startGrid.map(row => [...row]);
-  const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0);
-  const descending = new Set<number>(), ascending = new Set<number>();
-  const houseFor = (row: number, column: number) => Math.floor(row / 3) * 3 + Math.floor(column / 3);
-  const place = (row: number, column: number, digit: number) => {
-    const bit = 1 << (digit - 1), house = houseFor(row, column);
-    grid[row][column] = digit; rows[row] |= bit; columns[column] |= bit; houses[house] |= bit;
-    if (digit === 9) { descending.add(row - column); ascending.add(row + column); }
-  };
-  const remove = (row: number, column: number, digit: number) => {
-    const bit = 1 << (digit - 1), house = houseFor(row, column);
-    grid[row][column] = 0; rows[row] ^= bit; columns[column] ^= bit; houses[house] ^= bit;
-    if (digit === 9) { descending.delete(row - column); ascending.delete(row + column); }
-  };
-  for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) {
-    const digit = grid[row][column];
-    if (!digit) continue;
-    const bit = 1 << (digit - 1), house = houseFor(row, column);
-    if (digit < 1 || digit > 9 || (rows[row] | columns[column] | houses[house]) & bit || (digit === 9 && (descending.has(row - column) || ascending.has(row + column)))) return null;
-    place(row, column, digit);
-  }
-  const search = (): boolean => {
-    let bestRow = -1, bestColumn = -1, bestChoices = 0, fewest = 10;
-    for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) if (!grid[row][column]) {
-      let choices = allDigits & ~(rows[row] | columns[column] | houses[houseFor(row, column)]);
-      if (descending.has(row - column) || ascending.has(row + column)) choices &= ~(1 << 8);
-      const count = bitCount(choices);
-      if (count < fewest) { bestRow = row; bestColumn = column; bestChoices = choices; fewest = count; }
-    }
-    if (bestRow < 0) return true;
-    if (!bestChoices) return false;
-    for (const digit of shuffle(Array.from({ length: 9 }, (_, index) => index + 1).filter(digit => bestChoices & (1 << (digit - 1))))) {
-      place(bestRow, bestColumn, digit);
-      if (search()) return true;
-      remove(bestRow, bestColumn, digit);
-    }
-    return false;
-  };
-  return search() ? grid : null;
-}
-
 // This is a GPL-3.0 adaptation of sudokUI's board/rating approach.
 // Source: https://github.com/AImenes/sudokUI (board.ts, ratings.ts and its
 // human solver).  It adds the two X-Sudoku units to the board model.  As in
@@ -900,10 +857,9 @@ function digQueen(method: DiggingMethod) {
   return { puzzle, solution };
 }
 
-export default function Home({ initialMode = "diagonal", initialQueenSubpage = "randomly-generate" }: { initialMode?: Mode; initialQueenSubpage?: QueenSubpage }) {
+export default function Home({ initialMode = "diagonal" }: { initialMode?: Mode }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(initialMode);
-  const [queenSubpage, setQueenSubpage] = useState<QueenSubpage>(initialQueenSubpage);
   const [grid, setGrid] = useState<Grid>(emptyGrid);
   const [solution, setSolution] = useState<Grid | null>(null);
   const [elapsed, setElapsed] = useState<number | null>(null);
@@ -928,15 +884,6 @@ export default function Home({ initialMode = "diagonal", initialQueenSubpage = "
   const buildStartedAt = useRef(0);
   const simulationCancelled = useRef(false);
   const showsDiagonalGuides = mode === "diagonal" || mode === "anti-diagonal" || mode === "one-of-each";
-  const isQueen = mode === "queen";
-  const showQueenGenerator = !isQueen || queenSubpage === "randomly-generate";
-  const showBuilder = !isQueen || queenSubpage === "custom-build";
-  const showImport = !isQueen || queenSubpage === "import-grid";
-  const showSimulation = isQueen && queenSubpage === "simulation";
-  useEffect(() => {
-    setMode(initialMode);
-    setQueenSubpage(initialQueenSubpage);
-  }, [initialMode, initialQueenSubpage]);
   const generate = () => {
     const started = performance.now();
     setIsBuiltPuzzle(false);
@@ -955,16 +902,11 @@ export default function Home({ initialMode = "diagonal", initialQueenSubpage = "
     setCopiedGrid(null);
     setElapsed(performance.now() - started);
   };
-  const selectMode = (nextMode: Mode) => { simulationCancelled.current = true; setIsSimulating(false); setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setQueenSubpage("randomly-generate"); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); router.push(modePaths[nextMode]); };
-  const selectQueenSubpage = (nextSubpage: QueenSubpage) => {
-    simulationCancelled.current = true; setIsSimulating(false); setIsBuilding(false); setIsBuiltPuzzle(false);
-    setQueenSubpage(nextSubpage); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); setInputError(null);
-    router.push(`/queen_sudoku/${nextSubpage.replaceAll("-", "_")}/`);
-  };
+  const selectMode = (nextMode: Mode) => { simulationCancelled.current = true; setIsSimulating(false); setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); router.push(modePaths[nextMode]); };
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
     setIsBuilderExpanded(true);
-    if (mode !== "diagonal" && mode !== "anti-diagonal" && mode !== "queen") { setBuilderError("The custom builder currently supports Diagonal, Anti-diagonal, and Queen Sudoku puzzles."); return; }
+    if (mode !== "diagonal" && mode !== "anti-diagonal") { setBuilderError("The custom builder currently supports Diagonal and Anti-diagonal puzzles. Select one of those modes to build a puzzle."); return; }
     const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
     if (!Number.isInteger(minimum) || !Number.isInteger(maximum) || minimum < 0 || maximum < minimum) {
       setBuilderError("Enter whole-number difficulty scores where the maximum is at least the minimum.");
@@ -1011,14 +953,12 @@ export default function Home({ initialMode = "diagonal", initialQueenSubpage = "
         attemptsThisPass += 1;
         const unique = mode === "diagonal"
           ? countDiagonalSolutions(candidatePuzzle) === 1
-          : mode === "queen"
-            ? countQueenSolutions(candidatePuzzle) === 1
-            : countAntiDiagonalSolutions(candidatePuzzle) === 1;
+          : countAntiDiagonalSolutions(candidatePuzzle) === 1;
         if (unique) {
           // The anti-diagonal rating uses standard Sudoku houses only. Its
           // special repeated-diagonal condition is used for uniqueness, but
           // does not create a false distinct-diagonal deduction.
-          const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution, mode === "diagonal" ? "diagonal" : mode === "queen" ? "queen" : "standard");
+          const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution, mode === "diagonal" ? "diagonal" : "standard");
           const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
           if (candidateDifficulty.score < minimum || candidateDifficulty.score > maximum) continue;
           setBuildAttempts(total => total + attemptsThisPass);
@@ -1041,12 +981,9 @@ export default function Home({ initialMode = "diagonal", initialQueenSubpage = "
     const text = puzzleInput.replaceAll(/\s/g, "");
     if (!/^[1-9.]{81}$/.test(text)) { setInputError("Enter exactly 81 digits or periods."); return; }
     const puzzle = Array.from({ length: 9 }, (_, row) => text.slice(row * 9, row * 9 + 9).split("").map(value => value === "." ? 0 : Number(value)));
-    const queenImport = mode === "queen";
-    const solved = queenImport ? solveQueenGrid(puzzle) : solveDiagonalGrid(puzzle);
-    const unique = queenImport ? countQueenSolutions(puzzle) === 1 : countDiagonalSolutions(puzzle) === 1;
-    if (!solved || !unique) { setInputError(queenImport ? "This must be a valid Queen Sudoku with one solution." : "This must be a valid diagonal sudoku with one solution."); return; }
-    if (!queenImport) setMode("diagonal");
-    setGrid(puzzle); setSolution(solved); setDifficulty(rateDiagonalPuzzle(puzzle, solved, queenImport ? "queen" : "diagonal"));
+    const solved = solveDiagonalGrid(puzzle);
+    if (!solved || countDiagonalSolutions(puzzle) !== 1) { setInputError("This must be a valid diagonal sudoku with one solution."); return; }
+    setMode("diagonal"); setGrid(puzzle); setSolution(solved); setDifficulty(rateDiagonalPuzzle(puzzle, solved));
     setElapsed(null); setWalkthroughIndex(0); setCopiedGrid(null); setInputError(null); setIsBuiltPuzzle(false);
   };
   const copyGrid = async (board: Grid, kind: "puzzle" | "solution") => {
@@ -1129,22 +1066,14 @@ export default function Home({ initialMode = "diagonal", initialQueenSubpage = "
       <div className="app-layout">
         <aside className="mode-dashboard" aria-label="Puzzle modes">
           <p className="dashboard-title">Puzzle modes</p>
-          <label className="mode-picker">
-            <span className="sr-only">Choose a puzzle mode</span>
-            <select value={mode} onChange={event => selectMode(event.target.value as Mode)} aria-label="Choose a puzzle mode">
-              {modeOptions.map(option => <option value={option.mode} key={option.mode}>{option.label}</option>)}
-            </select>
-          </label>
-          <p className="mode-description">{descriptions[mode]}</p>
-          {isQueen && <nav className="queen-subpages" aria-label="Queen Sudoku sections">
-            <p className="dashboard-title">Queen sudoku</p>
-            {([
-              ["randomly-generate", "Randomly generate"],
-              ["custom-build", "Custom build"],
-              ["import-grid", "Import grid"],
-              ["simulation", "Simulation"],
-            ] as [QueenSubpage, string][]).map(([subpage, label]) => <button className={queenSubpage === subpage ? "active" : ""} key={subpage} onClick={() => selectQueenSubpage(subpage)}>{label}</button>)}
-          </nav>}
+          <div className="mode-picker">
+            {modeOptions.map(option => <div className="mode-card" key={option.mode}>
+              <button className={mode === option.mode ? "active" : ""} onClick={() => selectMode(option.mode)}>
+                <span>{option.label}</span>
+                {mode === option.mode && <span className="mode-description">{descriptions[option.mode]}</span>}
+              </button>
+            </div>)}
+          </div>
           <div className="dashboard-difficulty" role="group" aria-label="Required difficulty score range">
             <p className="dashboard-title">Build difficulty</p>
             <label>Minimum score
@@ -1175,14 +1104,12 @@ export default function Home({ initialMode = "diagonal", initialQueenSubpage = "
           </label>
         </aside>
         <div className="workspace">
-      {(showQueenGenerator || showBuilder) && <div className="puzzle-actions">
-        {showQueenGenerator && <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>}
-        {showBuilder && <>
-          <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
-          <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
-        </>}
-      </div>}
-      {showBuilder && <section className="puzzle-builder" aria-label="Build a puzzle">
+      <div className="puzzle-actions">
+        <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>
+        <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
+        <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
+      </div>
+      <section className="puzzle-builder" aria-label="Build a puzzle">
         <div className="builder-heading">
           <h2>Build a puzzle</h2>
           <button className="builder-caret" type="button" onClick={() => setIsBuilderExpanded(expanded => !expanded)} aria-expanded={isBuilderExpanded} aria-label={`${isBuilderExpanded ? "Hide" : "Show"} Build a puzzle settings`}>{isBuilderExpanded ? "⌃" : "⌄"}</button>
@@ -1209,8 +1136,8 @@ export default function Home({ initialMode = "diagonal", initialQueenSubpage = "
         {isBuilding && <p className="builder-status" role="status">Building from this exact pattern · {buildAttempts} completed grids tested.</p>}
         {builderError && <p className="builder-error" role="alert">{builderError}</p>}
         </>}
-      </section>}
-      {showSimulation && <section className="queen-simulation" aria-label="Queen Sudoku simulation">
+      </section>
+      {mode === "queen" && <section className="queen-simulation" aria-label="Queen Sudoku simulation">
         <h2>Simulation</h2>
         <p>Run repeated Queen Sudoku generations using single cell digging only.</p>
         <div className="simulation-actions">
@@ -1276,12 +1203,12 @@ export default function Home({ initialMode = "diagonal", initialQueenSubpage = "
           <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>
         </aside>}
       </div>
-      {showImport && <section className="puzzle-loader">
-        <label htmlFor="puzzle-input">Load an 81-cell {isQueen ? "Queen Sudoku" : "diagonal"} puzzle</label>
+      <section className="puzzle-loader">
+        <label htmlFor="puzzle-input">Load an 81-cell diagonal puzzle</label>
         <textarea id="puzzle-input" value={puzzleInput} onChange={event => setPuzzleInput(event.target.value)} placeholder="Use digits 1–9 and . for blanks" rows={3} />
         <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>
         {inputError && <p role="alert">{inputError}</p>}
-      </section>}
+      </section>
       {solution && <section className="dig-results">
         {difficulty && difficulty.walkthrough.length > 0 && (() => {
           const step = difficulty.walkthrough[walkthroughIndex];

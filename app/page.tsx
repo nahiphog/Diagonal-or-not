@@ -1259,6 +1259,12 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         </aside>
         <div className="workspace">
       <div className="puzzle-actions">
+        {mode === "diagonal" && <>
+          <button className="generate-button simulation-link">Generate</button>
+          <button className="generate-button simulation-link">Custom build</button>
+          <button className="generate-button simulation-link">Simulation</button>
+          <button className="generate-button simulation-link">Import a grid</button>
+        </>}
         <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>
         <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
         <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>

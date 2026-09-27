@@ -1087,6 +1087,25 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     };
     window.setTimeout(runBatch, 0);
   };
+  const runDiagonalSimulation = () => {
+    const trials = Number(simulationTrials);
+    if (!Number.isInteger(trials) || trials < 1) return;
+    simulationCancelled.current = false;
+    setIsSimulating(true); setSimulationTally({}); setCompletedSimulationTrials(0); setSimulationOutputs([]);
+    const tally: Record<number, number> = {};
+    let completed = 0;
+    const runBatch = () => {
+      const result = digDiagonal("single");
+      const givens = result.puzzle.flat().filter(Boolean).length;
+      tally[givens] = (tally[givens] ?? 0) + 1;
+      setSimulationOutputs(outputs => [...outputs, { puzzle: result.puzzle, givens }]);
+      completed += 1;
+      setSimulationTally({ ...tally }); setCompletedSimulationTrials(completed);
+      if (simulationCancelled.current || completed >= trials) { setIsSimulating(false); return; }
+      window.setTimeout(runBatch, 0);
+    };
+    window.setTimeout(runBatch, 0);
+  };
   useEffect(() => {
     if (!isBuilding) return;
     let cancelled = false;
@@ -1266,8 +1285,8 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
           <button className={`generate-button simulation-link ${diagonalTab === "simulation" ? "active" : ""}`} onClick={() => setDiagonalTab("simulation")}>Simulation</button>
           <button className={`generate-button simulation-link ${diagonalTab === "import" ? "active" : ""}`} onClick={() => setDiagonalTab("import")}>Import a grid</button>
         </>}
+        {(mode !== "diagonal" || diagonalTab === "generate") && <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>}
         {(mode !== "diagonal" || diagonalTab === "custom-build") && <>
-        <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>
         <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
         <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
         {mode === "queen" && <>
@@ -1360,6 +1379,32 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
           </div>;
         })()}
         <div className="simulation-output" aria-live="polite"><h3>Qualifying simulation grids</h3>{(() => { const filteredOutputs = simulationOutputs.filter(({ givens }) => givens <= Number(simulationOutputLimit)); return filteredOutputs.length ? <><p>{filteredOutputs.length} grid{filteredOutputs.length === 1 ? "" : "s"} with at most {simulationOutputLimit} givens.</p><div className="simulation-grid-list">{filteredOutputs.map(({ puzzle, givens }, outputIndex) => <div className="simulation-grid-card" key={`${givens}-${outputIndex}`}><p>Trial grid {outputIndex + 1}: {givens} givens</p><div className="grid-frame"><div className="grid" aria-label={`Anti-diagonal simulation grid ${outputIndex + 1}`}>{puzzle.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}</div></div></div>)}</div></> : <p>Every generated grid with at most {simulationOutputLimit} givens will appear here.</p>; })()}</div>
+      </section>}
+      {mode === "diagonal" && diagonalTab === "simulation" && <section className="queen-simulation" aria-label="Diagonal simulation">
+        <h2>Simulation</h2>
+        <p>Run repeated Diagonal Sudoku generations using single cell digging only. The histogram refreshes after every new puzzle.</p>
+        <div className="simulation-actions">
+          <label htmlFor="simulation-trials">Trials
+            <input id="simulation-trials" type="number" min="1" step="1" value={simulationTrials} onChange={event => setSimulationTrials(event.target.value)} disabled={isSimulating} />
+          </label>
+          <button className="generate-button" onClick={runDiagonalSimulation} disabled={isSimulating}>Run simulation</button>
+          <button className="halt-button" onClick={() => { simulationCancelled.current = true; }} disabled={!isSimulating}>Halt simulation</button>
+        </div>
+        <label className="simulation-output-filter">Display the latest grid with at most
+          <select value={simulationOutputLimit} onChange={event => setSimulationOutputLimit(event.target.value)} disabled={isSimulating}>
+            {[15, 16, 17, 18, 19, 20, 21].map(limit => <option value={limit} key={limit}>{limit} cells</option>)}
+          </select>
+        </label>
+        {completedSimulationTrials > 0 && (() => {
+          const bins = Object.entries(simulationTally).map(([givens, tally]) => ({ givens: Number(givens), tally })).sort((first, second) => first.givens - second.givens);
+          const maximum = Math.max(...bins.map(bin => bin.tally), 1);
+          return <div className="simulation-chart" aria-label="Histogram of empirical tally by number of given cells">
+            <div className="simulation-y-axis"><strong>Empirical tally</strong><span>{maximum}</span><span>0</span></div>
+            <div className="simulation-plot"><div className="simulation-bars">{bins.map(bin => <div className="simulation-bar-column" key={bin.givens}><span className="simulation-bar-value">{bin.tally}</span><div className="simulation-bar" style={{ height: `${Math.max(4, (bin.tally / maximum) * 100)}%` }} /><span className="simulation-bin-label">{bin.givens}</span></div>)}</div><strong className="simulation-x-axis">Number of given cells</strong></div>
+            <p className="simulation-progress">{completedSimulationTrials} of {simulationTrials} trials complete{isSimulating ? "…" : "."}</p>
+          </div>;
+        })()}
+        <div className="simulation-output" aria-live="polite"><h3>Qualifying simulation grids</h3>{(() => { const filteredOutputs = simulationOutputs.filter(({ givens }) => givens <= Number(simulationOutputLimit)); return filteredOutputs.length ? <><p>{filteredOutputs.length} grid{filteredOutputs.length === 1 ? "" : "s"} with at most {simulationOutputLimit} givens.</p><div className="simulation-grid-list">{filteredOutputs.map(({ puzzle, givens }, outputIndex) => <div className="simulation-grid-card" key={`${givens}-${outputIndex}`}><p>Trial grid {outputIndex + 1}: {givens} givens</p><div className="grid-frame"><div className="grid" aria-label={`Diagonal simulation grid ${outputIndex + 1}`}>{puzzle.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}</div></div></div>)}</div></> : <p>Every generated grid with at most {simulationOutputLimit} givens will appear here.</p>; })()}</div>
       </section>}
       </>}
       <div className={`puzzle-output ${solution && difficulty ? "puzzle-output-built" : ""}`}>

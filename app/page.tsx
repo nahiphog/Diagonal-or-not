@@ -1289,6 +1289,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         <button className={`generate-button simulation-link ${diagonalTab === "generate" ? "active" : ""}`} onClick={() => setDiagonalTab("generate")}>Generate</button>
         <button className={`generate-button simulation-link ${diagonalTab === "custom-build" ? "active" : ""}`} onClick={() => setDiagonalTab("custom-build")}>Custom build</button>
         <button className={`generate-button simulation-link ${diagonalTab === "simulation" ? "active" : ""}`} onClick={() => setDiagonalTab("simulation")}>Simulation</button>
+        <div className="puzzle-actions-break"></div>
         <button className={`generate-button simulation-link ${diagonalTab === "import" ? "active" : ""}`} onClick={() => setDiagonalTab("import")}>Import a grid</button>
         <hr className="puzzle-actions-divider" />
         {diagonalTab === "generate" && <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>}

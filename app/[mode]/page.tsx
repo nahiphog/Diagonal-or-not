@@ -9,6 +9,7 @@ const pathModes: Record<string, Mode> = {
   bent_diagonal: "bent-diagonal",
   triple_diagonal: "triple-diagonal",
   queen_sudoku: "queen",
+  temp: "temp",
 };
 
 export default async function PuzzleModePage({ params }: { params: Promise<{ mode: string }> }) {

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Grid = number[][];
-export type Mode = "diagonal" | "anti-diagonal" | "one-of-each" | "double-diagonal" | "bent-diagonal" | "triple-diagonal" | "queen";
+export type Mode = "diagonal" | "anti-diagonal" | "one-of-each" | "double-diagonal" | "bent-diagonal" | "triple-diagonal" | "queen" | "temp";
 type DiggingMethod = "single" | "double";
 type CandidateRemoval = { cell: number; digit: number };
 type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; involved: CandidateRemoval[]; highlightedDiagonals: number[]; message: string };
@@ -21,6 +21,7 @@ export const modePaths: Record<Mode, string> = {
   "bent-diagonal": "/bent_diagonal/",
   "triple-diagonal": "/triple_diagonal/",
   queen: "/queen_sudoku/",
+  temp: "/temp/",
 };
 const queenDiagonals: QueenDiagonal[] = [
   ...[0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7].map(offset => ({
@@ -185,6 +186,7 @@ function generateQueenSudoku(): Grid {
 function generateGrid(mode: Mode): Grid {
   if (mode === "one-of-each") return generateOneOfEach();
   if (mode === "queen") return generateQueenSudoku();
+  if (mode === "temp") return emptyGrid();
 
   if (mode === "anti-diagonal") {
     const digitMap = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]);
@@ -1217,6 +1219,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     "bent-diagonal": "Each of the four bent diagonals must contain the digits 1-9.",
     "triple-diagonal": "Digits must not repeat along any marked diagonal.",
     queen: "9s cannot see each other along a diagonal.",
+    temp: "Temporary puzzle mode.",
   };
   const modeOptions: { mode: Mode; label: string }[] = [
     { mode: "diagonal", label: "Diagonal" },
@@ -1226,6 +1229,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     { mode: "bent-diagonal", label: "Bent diagonal" },
     { mode: "triple-diagonal", label: "Triple diagonal" },
     { mode: "queen", label: "Queen sudoku" },
+    { mode: "temp", label: "Temp sudoku" },
   ];
   const modeLabels: Record<Mode, string> = Object.fromEntries(modeOptions.map(({ mode, label }) => [mode, label])) as Record<Mode, string>;
   const runSimulationForMode = () => {

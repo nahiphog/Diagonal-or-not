@@ -912,7 +912,7 @@ function digQueen(method: DiggingMethod) {
   return { puzzle, solution };
 }
 
-export default function Home({ initialMode = "diagonal" }: { initialMode?: Mode }) {
+export default function Home({ initialMode = "diagonal", showQueenSimulation = false }: { initialMode?: Mode; showQueenSimulation?: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [grid, setGrid] = useState<Grid>(emptyGrid);
@@ -936,6 +936,9 @@ export default function Home({ initialMode = "diagonal" }: { initialMode?: Mode 
   const [simulationTally, setSimulationTally] = useState<Record<number, number>>({});
   const [completedSimulationTrials, setCompletedSimulationTrials] = useState(0);
   const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationOutputLimit, setSimulationOutputLimit] = useState("18");
+  const [simulationOutput, setSimulationOutput] = useState<Grid | null>(null);
+  const [simulationOutputGivens, setSimulationOutputGivens] = useState<number | null>(null);
   const buildStartedAt = useRef(0);
   const simulationCancelled = useRef(false);
   const showsDiagonalGuides = mode === "diagonal" || mode === "anti-diagonal" || mode === "one-of-each";
@@ -1168,6 +1171,7 @@ export default function Home({ initialMode = "diagonal" }: { initialMode?: Mode 
         <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>
         <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
         <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
+        {mode === "queen" && !showQueenSimulation && <button className="generate-button simulation-link" onClick={() => router.push("/queen_sudoku/simulation/")}>Simulation</button>}
       </div>
       <section className="puzzle-builder" aria-label="Build a puzzle">
         <div className="builder-heading">

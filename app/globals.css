@@ -151,6 +151,8 @@ h1 { margin: 0; font-size: clamp(1.5rem, 3.5vw, 2rem); font-weight: 700; letter-
   .walkthrough-layout { grid-template-columns: 1fr; }
   .walkthrough-details { padding: 0; }
 }
+.simulation-output-filter { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.75rem; color: #374151; font-size: 0.82rem; font-weight: 700; }
+.simulation-output-filter select { border: 1px solid #94a3b8; border-radius: 0.4rem; padding: 0.4rem 0.5rem; background: #fff; color: #111827; font: inherit; font-size: 0.9rem; }
 .simulation-grid-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 1rem; }
 .simulation-grid-card { min-width: 0; }
 .simulation-grid-card > p { margin: 0 0 0.4rem; color: #374151; font-size: 0.8rem; font-weight: 700; }

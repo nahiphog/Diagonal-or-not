@@ -963,7 +963,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
     setIsBuilderExpanded(true);
-    if (mode !== "diagonal" && mode !== "anti-diagonal") { setBuilderError("The custom builder currently supports Diagonal and Anti-diagonal puzzles. Select one of those modes to build a puzzle."); return; }
+    if (mode !== "diagonal" && mode !== "anti-diagonal" && mode !== "queen") { setBuilderError("The custom builder currently supports Diagonal, Anti-diagonal, and Queen sudoku puzzles."); return; }
     const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
     if (!Number.isInteger(minimum) || !Number.isInteger(maximum) || minimum < 0 || maximum < minimum) {
       setBuilderError("Enter whole-number difficulty scores where the maximum is at least the minimum.");
@@ -1008,12 +1008,12 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         attemptsThisPass += 1;
         const unique = mode === "diagonal"
           ? countDiagonalSolutions(candidatePuzzle) === 1
-          : countAntiDiagonalSolutions(candidatePuzzle) === 1;
+          : mode === "anti-diagonal" ? countAntiDiagonalSolutions(candidatePuzzle) === 1 : countQueenSolutions(candidatePuzzle) === 1;
         if (unique) {
           // The anti-diagonal rating uses standard Sudoku houses only. Its
           // special repeated-diagonal condition is used for uniqueness, but
           // does not create a false distinct-diagonal deduction.
-          const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution, mode === "diagonal" ? "diagonal" : "standard");
+          const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution, mode === "diagonal" ? "diagonal" : mode === "queen" ? "queen" : "standard");
           const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
           if (candidateDifficulty.score < minimum || candidateDifficulty.score > maximum) continue;
           setBuildAttempts(total => total + attemptsThisPass);

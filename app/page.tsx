@@ -1287,9 +1287,9 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         <div className="workspace">
       <div className="puzzle-actions">
         <div className="puzzle-actions-tabs">
-          <button className={`generate-button simulation-link ${diagonalTab === "generate" ? "active" : ""}`} onClick={() => setDiagonalTab("generate")}>Generate</button>
-          <button className={`generate-button simulation-link ${diagonalTab === "custom-build" ? "active" : ""}`} onClick={() => setDiagonalTab("custom-build")}>Custom build</button>
-          <button className={`generate-button simulation-link ${diagonalTab === "simulation" ? "active" : ""}`} onClick={() => setDiagonalTab("simulation")}>Simulation</button>
+          <button className={`generate-button simulation-link ${diagonalTab === "generate" ? "active" : ""}`} onClick={() => setDiagonalTab("generate")}>Button 1</button>
+          <button className={`generate-button simulation-link ${diagonalTab === "custom-build" ? "active" : ""}`} onClick={() => setDiagonalTab("custom-build")}>Button 2</button>
+          <button className={`generate-button simulation-link ${diagonalTab === "simulation" ? "active" : ""}`} onClick={() => setDiagonalTab("simulation")}>Button 3</button>
           <button className={`generate-button simulation-link ${diagonalTab === "import" ? "active" : ""}`} onClick={() => setDiagonalTab("import")}>Import a grid</button>
         </div>
         <hr className="puzzle-actions-divider" />

@@ -461,6 +461,62 @@ function solveDiagonalGrid(startGrid: Grid): Grid | null {
   return search() ? grid : null;
 }
 
+function solveAntiDiagonalGrid(startGrid: Grid): Grid | null {
+  const grid = startGrid.map(row => [...row]);
+  const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0);
+  const diagonalMasks = [0, 0];
+  const diagonalCounts = [Array(10).fill(0), Array(10).fill(0)];
+  const diagonalsFor = (row: number, column: number) => [row === column ? 0 : -1, row + column === 8 ? 1 : -1].filter(index => index >= 0);
+  const addDiagonalDigit = (row: number, column: number, digit: number) => {
+    for (const diagonal of diagonalsFor(row, column)) {
+      diagonalCounts[diagonal][digit] += 1;
+      diagonalMasks[diagonal] |= 1 << (digit - 1);
+    }
+  };
+  const removeDiagonalDigit = (row: number, column: number, digit: number) => {
+    for (const diagonal of diagonalsFor(row, column)) {
+      diagonalCounts[diagonal][digit] -= 1;
+      if (!diagonalCounts[diagonal][digit]) diagonalMasks[diagonal] &= ~(1 << (digit - 1));
+    }
+  };
+
+  for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) {
+    const digit = grid[row][column];
+    if (!digit) continue;
+    if (digit < 1 || digit > 9) return null;
+    const bit = 1 << (digit - 1), house = Math.floor(row / 3) * 3 + Math.floor(column / 3);
+    if ((rows[row] | columns[column] | houses[house]) & bit) return null;
+    rows[row] |= bit; columns[column] |= bit; houses[house] |= bit;
+    addDiagonalDigit(row, column, digit);
+    if (diagonalsFor(row, column).some(diagonal => bitCount(diagonalMasks[diagonal]) > 3)) return null;
+  }
+
+  const search = (): boolean => {
+    let bestRow = -1, bestColumn = -1, bestChoices = 0, fewest = 10;
+    for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) if (!grid[row][column]) {
+      const house = Math.floor(row / 3) * 3 + Math.floor(column / 3);
+      let choices = allDigits & ~(rows[row] | columns[column] | houses[house]);
+      for (const diagonal of diagonalsFor(row, column)) {
+        if (bitCount(diagonalMasks[diagonal]) === 3) choices &= diagonalMasks[diagonal];
+      }
+      const count = bitCount(choices);
+      if (!count) return false;
+      if (count < fewest) { bestRow = row; bestColumn = column; bestChoices = choices; fewest = count; }
+    }
+    if (bestRow < 0) return true;
+    for (let digit = 1; digit <= 9; digit++) if (bestChoices & (1 << (digit - 1))) {
+      const bit = 1 << (digit - 1), house = Math.floor(bestRow / 3) * 3 + Math.floor(bestColumn / 3);
+      grid[bestRow][bestColumn] = digit; rows[bestRow] |= bit; columns[bestColumn] |= bit; houses[house] |= bit;
+      addDiagonalDigit(bestRow, bestColumn, digit);
+      if (search()) return true;
+      removeDiagonalDigit(bestRow, bestColumn, digit);
+      grid[bestRow][bestColumn] = 0; rows[bestRow] ^= bit; columns[bestColumn] ^= bit; houses[house] ^= bit;
+    }
+    return false;
+  };
+  return search() ? grid : null;
+}
+
 function solveQueenGrid(startGrid: Grid): Grid | null {
   const grid = startGrid.map(row => [...row]);
   const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0);
@@ -927,7 +983,7 @@ function digQueen(method: DiggingMethod) {
   return { puzzle, solution };
 }
 
-export default function Home({ initialMode = "diagonal", showQueenSimulation = false, showQueenImport = false }: { initialMode?: Mode; showQueenSimulation?: boolean; showQueenImport?: boolean }) {
+export default function Home({ initialMode = "diagonal", showQueenSimulation = false, showQueenImport = false, showAntiDiagonalSimulation = false, showAntiDiagonalImport = false }: { initialMode?: Mode; showQueenSimulation?: boolean; showQueenImport?: boolean; showAntiDiagonalSimulation?: boolean; showAntiDiagonalImport?: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [grid, setGrid] = useState<Grid>(emptyGrid);
@@ -1011,6 +1067,25 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     };
     window.setTimeout(runBatch, 0);
   };
+  const runAntiDiagonalSimulation = () => {
+    const trials = Number(simulationTrials);
+    if (!Number.isInteger(trials) || trials < 1) return;
+    simulationCancelled.current = false;
+    setIsSimulating(true); setSimulationTally({}); setCompletedSimulationTrials(0); setSimulationOutputs([]);
+    const tally: Record<number, number> = {};
+    let completed = 0;
+    const runBatch = () => {
+      const result = digAntiDiagonal("single");
+      const givens = result.puzzle.flat().filter(Boolean).length;
+      tally[givens] = (tally[givens] ?? 0) + 1;
+      setSimulationOutputs(outputs => [...outputs, { puzzle: result.puzzle, givens }]);
+      completed += 1;
+      setSimulationTally({ ...tally }); setCompletedSimulationTrials(completed);
+      if (simulationCancelled.current || completed >= trials) { setIsSimulating(false); return; }
+      window.setTimeout(runBatch, 0);
+    };
+    window.setTimeout(runBatch, 0);
+  };
   useEffect(() => {
     if (!isBuilding) return;
     let cancelled = false;
@@ -1052,13 +1127,14 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     if (!/^[1-9.]{81}$/.test(text)) { setInputError("Enter exactly 81 digits or periods."); return; }
     const puzzle = Array.from({ length: 9 }, (_, row) => text.slice(row * 9, row * 9 + 9).split("").map(value => value === "." ? 0 : Number(value)));
     const importingQueen = mode === "queen";
-    const solved = importingQueen ? solveQueenGrid(puzzle) : solveDiagonalGrid(puzzle);
-    const unique = importingQueen ? countQueenSolutions(puzzle) === 1 : countDiagonalSolutions(puzzle) === 1;
+    const importingAntiDiagonal = mode === "anti-diagonal";
+    const solved = importingQueen ? solveQueenGrid(puzzle) : importingAntiDiagonal ? solveAntiDiagonalGrid(puzzle) : solveDiagonalGrid(puzzle);
+    const unique = importingQueen ? countQueenSolutions(puzzle) === 1 : importingAntiDiagonal ? countAntiDiagonalSolutions(puzzle) === 1 : countDiagonalSolutions(puzzle) === 1;
     if (!solved || !unique) {
-      setInputError(importingQueen ? "This must be a valid Queen sudoku with one solution." : "This must be a valid diagonal sudoku with one solution.");
+      setInputError(importingQueen ? "This must be a valid Queen sudoku with one solution." : importingAntiDiagonal ? "This must be a valid Anti-diagonal sudoku with one solution." : "This must be a valid diagonal sudoku with one solution.");
       return;
     }
-    setGrid(puzzle); setSolution(solved); setDifficulty(rateDiagonalPuzzle(puzzle, solved, importingQueen ? "queen" : "diagonal"));
+    setGrid(puzzle); setSolution(solved); setDifficulty(rateDiagonalPuzzle(puzzle, solved, importingQueen ? "queen" : importingAntiDiagonal ? "anti-diagonal" : "diagonal"));
     setElapsed(null); setWalkthroughIndex(0); setCopiedGrid(null); setInputError(null); setIsBuiltPuzzle(false);
   };
   const copyGrid = async (board: Grid, kind: "puzzle" | "solution") => {
@@ -1190,6 +1266,10 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
           <button className="generate-button simulation-link" onClick={() => router.push("/queen_sudoku/simulation/")}>Simulation</button>
           <button className="generate-button simulation-link" onClick={() => router.push("/queen_sudoku/import_grid/")}>Import a grid</button>
         </>}
+        {mode === "anti-diagonal" && <>
+          <button className="generate-button simulation-link" onClick={() => router.push("/anti_diagonal/simulation/")}>Simulation</button>
+          <button className="generate-button simulation-link" onClick={() => router.push("/anti_diagonal/import_grid/")}>Import a grid</button>
+        </>}
       </div>
       <section className="puzzle-builder" aria-label="Build a puzzle">
         <div className="builder-heading">
@@ -1245,6 +1325,32 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         })()}
         <div className="simulation-output" aria-live="polite"><h3>Qualifying simulation grids</h3>{(() => { const filteredOutputs = simulationOutputs.filter(({ givens }) => givens <= Number(simulationOutputLimit)); return filteredOutputs.length ? <><p>{filteredOutputs.length} grid{filteredOutputs.length === 1 ? "" : "s"} with at most {simulationOutputLimit} givens.</p><div className="simulation-grid-list">{filteredOutputs.map(({ puzzle, givens }, outputIndex) => <div className="simulation-grid-card" key={`${givens}-${outputIndex}`}><p>Trial grid {outputIndex + 1}: {givens} givens</p><div className="grid-frame"><div className="grid" aria-label={`Queen Sudoku simulation grid ${outputIndex + 1}`}>{puzzle.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}</div></div></div>)}</div></> : <p>Every generated grid with at most {simulationOutputLimit} givens will appear here.</p>; })()}</div>
       </section>}
+      {mode === "anti-diagonal" && showAntiDiagonalSimulation && <section className="queen-simulation" aria-label="Anti-diagonal simulation">
+        <h2>Simulation</h2>
+        <p>Run repeated Anti-diagonal Sudoku generations using single cell digging only. The histogram refreshes after every new puzzle.</p>
+        <div className="simulation-actions">
+          <label htmlFor="simulation-trials">Trials
+            <input id="simulation-trials" type="number" min="1" step="1" value={simulationTrials} onChange={event => setSimulationTrials(event.target.value)} disabled={isSimulating} />
+          </label>
+          <button className="generate-button" onClick={runAntiDiagonalSimulation} disabled={isSimulating}>Run simulation</button>
+          <button className="halt-button" onClick={() => { simulationCancelled.current = true; }} disabled={!isSimulating}>Halt simulation</button>
+        </div>
+        <label className="simulation-output-filter">Display the latest grid with at most
+          <select value={simulationOutputLimit} onChange={event => setSimulationOutputLimit(event.target.value)} disabled={isSimulating}>
+            {[15, 16, 17, 18, 19, 20, 21].map(limit => <option value={limit} key={limit}>{limit} cells</option>)}
+          </select>
+        </label>
+        {completedSimulationTrials > 0 && (() => {
+          const bins = Object.entries(simulationTally).map(([givens, tally]) => ({ givens: Number(givens), tally })).sort((first, second) => first.givens - second.givens);
+          const maximum = Math.max(...bins.map(bin => bin.tally), 1);
+          return <div className="simulation-chart" aria-label="Histogram of empirical tally by number of given cells">
+            <div className="simulation-y-axis"><strong>Empirical tally</strong><span>{maximum}</span><span>0</span></div>
+            <div className="simulation-plot"><div className="simulation-bars">{bins.map(bin => <div className="simulation-bar-column" key={bin.givens}><span className="simulation-bar-value">{bin.tally}</span><div className="simulation-bar" style={{ height: `${Math.max(4, (bin.tally / maximum) * 100)}%` }} /><span className="simulation-bin-label">{bin.givens}</span></div>)}</div><strong className="simulation-x-axis">Number of given cells</strong></div>
+            <p className="simulation-progress">{completedSimulationTrials} of {simulationTrials} trials complete{isSimulating ? "…" : "."}</p>
+          </div>;
+        })()}
+        <div className="simulation-output" aria-live="polite"><h3>Qualifying simulation grids</h3>{(() => { const filteredOutputs = simulationOutputs.filter(({ givens }) => givens <= Number(simulationOutputLimit)); return filteredOutputs.length ? <><p>{filteredOutputs.length} grid{filteredOutputs.length === 1 ? "" : "s"} with at most {simulationOutputLimit} givens.</p><div className="simulation-grid-list">{filteredOutputs.map(({ puzzle, givens }, outputIndex) => <div className="simulation-grid-card" key={`${givens}-${outputIndex}`}><p>Trial grid {outputIndex + 1}: {givens} givens</p><div className="grid-frame"><div className="grid" aria-label={`Anti-diagonal simulation grid ${outputIndex + 1}`}>{puzzle.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}</div></div></div>)}</div></> : <p>Every generated grid with at most {simulationOutputLimit} givens will appear here.</p>; })()}</div>
+      </section>}
       <div className={`puzzle-output ${solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">
           <div className="grid-frame">
@@ -1284,8 +1390,8 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
           <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>
         </aside>}
       </div>
-      {(!showQueenSimulation && (mode !== "queen" || showQueenImport)) && <section className="puzzle-loader">
-        <label htmlFor="puzzle-input">Load an 81-cell {mode === "queen" ? "Queen" : "diagonal"} puzzle</label>
+      {(!showQueenSimulation && !showAntiDiagonalSimulation && (mode !== "queen" || showQueenImport) && (mode !== "anti-diagonal" || showAntiDiagonalImport)) && <section className="puzzle-loader">
+        <label htmlFor="puzzle-input">Load an 81-cell {mode === "queen" ? "Queen" : mode === "anti-diagonal" ? "Anti-diagonal" : "diagonal"} puzzle</label>
         <textarea id="puzzle-input" value={puzzleInput} onChange={event => setPuzzleInput(event.target.value)} placeholder="Use digits 1–9 and . for blanks" rows={3} />
         <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>
         {inputError && <p role="alert">{inputError}</p>}

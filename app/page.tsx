@@ -1251,6 +1251,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
               </button>
             </div>)}
           </div>
+          {diagonalTab === "custom-build" && <>
           <div className="dashboard-difficulty" role="group" aria-label="Required difficulty score range">
             <p className="dashboard-title">Build difficulty</p>
             <label>Minimum score
@@ -1281,6 +1282,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
               <option value="double">Double cell digging</option>
             </select>
           </label>
+          </>}
         </aside>
         <div className="workspace">
       <div className="puzzle-actions">

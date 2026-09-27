@@ -982,17 +982,15 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     const trials = Number(simulationTrials);
     if (!Number.isInteger(trials) || trials < 1 || trials > 10000) return;
     simulationCancelled.current = false;
-    setIsSimulating(true); setSimulationTally({}); setCompletedSimulationTrials(0);
+    setIsSimulating(true); setSimulationTally({}); setCompletedSimulationTrials(0); setSimulationOutput(null); setSimulationOutputGivens(null);
     const tally: Record<number, number> = {};
     let completed = 0;
     const runBatch = () => {
-      const batchSize = Math.min(5, trials - completed);
-      for (let index = 0; index < batchSize; index++) {
-        const result = digQueen("single");
-        const givens = result.puzzle.flat().filter(Boolean).length;
-        tally[givens] = (tally[givens] ?? 0) + 1;
-      }
-      completed += batchSize;
+      const result = digQueen("single");
+      const givens = result.puzzle.flat().filter(Boolean).length;
+      tally[givens] = (tally[givens] ?? 0) + 1;
+      if (givens <= Number(simulationOutputLimit)) { setSimulationOutput(result.puzzle); setSimulationOutputGivens(givens); }
+      completed += 1;
       setSimulationTally({ ...tally }); setCompletedSimulationTrials(completed);
       if (simulationCancelled.current || completed >= trials) { setIsSimulating(false); return; }
       window.setTimeout(runBatch, 0);
@@ -1201,9 +1199,9 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         {builderError && <p className="builder-error" role="alert">{builderError}</p>}
         </>}
       </section>
-      {mode === "queen" && <section className="queen-simulation" aria-label="Queen Sudoku simulation">
+      {mode === "queen" && showQueenSimulation && <section className="queen-simulation" aria-label="Queen Sudoku simulation">
         <h2>Simulation</h2>
-        <p>Run repeated Queen Sudoku generations using single cell digging only.</p>
+        <p>Run repeated Queen Sudoku generations using single cell digging only. The histogram refreshes after every new puzzle.</p>
         <div className="simulation-actions">
           <label htmlFor="simulation-trials">Trials
             <input id="simulation-trials" type="number" min="1" max="10000" step="1" value={simulationTrials} onChange={event => setSimulationTrials(event.target.value)} disabled={isSimulating} />
@@ -1211,22 +1209,21 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
           <button className="generate-button" onClick={runQueenSimulation} disabled={isSimulating}>Run simulation</button>
           <button className="halt-button" onClick={() => { simulationCancelled.current = true; }} disabled={!isSimulating}>Halt simulation</button>
         </div>
+        <label className="simulation-output-filter">Display the latest grid with at most
+          <select value={simulationOutputLimit} onChange={event => setSimulationOutputLimit(event.target.value)} disabled={isSimulating}>
+            {[15, 16, 17, 18, 19, 20, 21].map(limit => <option value={limit} key={limit}>{limit} cells</option>)}
+          </select>
+        </label>
         {completedSimulationTrials > 0 && (() => {
           const bins = Object.entries(simulationTally).map(([givens, tally]) => ({ givens: Number(givens), tally })).sort((first, second) => first.givens - second.givens);
           const maximum = Math.max(...bins.map(bin => bin.tally), 1);
           return <div className="simulation-chart" aria-label="Histogram of empirical tally by number of given cells">
             <div className="simulation-y-axis"><strong>Empirical tally</strong><span>{maximum}</span><span>0</span></div>
-            <div className="simulation-plot">
-              <div className="simulation-bars">{bins.map(bin => <div className="simulation-bar-column" key={bin.givens}>
-                <span className="simulation-bar-value">{bin.tally}</span>
-                <div className="simulation-bar" style={{ height: `${Math.max(4, (bin.tally / maximum) * 100)}%` }} />
-                <span className="simulation-bin-label">{bin.givens}</span>
-              </div>)}</div>
-              <strong className="simulation-x-axis">Number of given cells</strong>
-            </div>
+            <div className="simulation-plot"><div className="simulation-bars">{bins.map(bin => <div className="simulation-bar-column" key={bin.givens}><span className="simulation-bar-value">{bin.tally}</span><div className="simulation-bar" style={{ height: `${Math.max(4, (bin.tally / maximum) * 100)}%` }} /><span className="simulation-bin-label">{bin.givens}</span></div>)}</div><strong className="simulation-x-axis">Number of given cells</strong></div>
             <p className="simulation-progress">{completedSimulationTrials} of {simulationTrials} trials complete{isSimulating ? "…" : "."}</p>
           </div>;
         })()}
+        <div className="simulation-output" aria-live="polite"><h3>Selected simulation grid</h3>{simulationOutput ? <><p>{simulationOutputGivens} givens — at most {simulationOutputLimit} selected.</p><div className="grid-frame"><div className="grid" aria-label="Selected Queen Sudoku simulation grid">{simulationOutput.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}</div></div></> : <p>When a generated puzzle has at most {simulationOutputLimit} givens, its grid will appear here.</p>}</div>
       </section>}
       <div className={`puzzle-output ${solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">

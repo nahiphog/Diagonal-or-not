@@ -1156,7 +1156,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
                 <option value="0">0</option>
                 <option value="500">500</option>
                 <option value="600">600</option>
-                <option value="800">800</option>
+                <option value="850">850</option>
                 <option value="1000">1000</option>
                 <option value="1100">1100</option>
               </select>
@@ -1165,6 +1165,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
               <select value={maximumDifficulty} onChange={event => setMaximumDifficulty(event.target.value)} disabled={isBuilding}>
                 <option value="500">500</option>
                 <option value="1000">1000</option>
+                <option value="1100">1100</option>
                 <option value="2000">2000</option>
                 <option value="10000">10000</option>
                 <option value="100000">100000</option>

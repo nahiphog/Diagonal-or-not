@@ -890,7 +890,21 @@ function digDiagonal(method: DiggingMethod, protectedCells = Array(81).fill(fals
     }
   }
   return { puzzle, solution };
+}function digAntiDiagonal(method: DiggingMethod) {
+  const solution = generateGrid("anti-diagonal");
+  const puzzle = solution.map(row => [...row]);
+  const cells = method === "single" ? Array.from({ length: 81 }, (_, index) => [Math.floor(index / 9), index % 9]) : Array.from({ length: 81 }, (_, index) => [Math.floor(index / 9), index % 9]).filter(([row, column]) => row < 4 || (row === 4 && column <= 4));
+  for (const [row, column] of shuffle(cells.map(([row, column]) => row * 9 + column)).map(cell => [Math.floor(cell / 9), cell % 9])) {
+    const mirrorRow = 8 - row, mirrorColumn = 8 - column;
+    const value = puzzle[row][column], mirrorValue = puzzle[mirrorRow][mirrorColumn];
+    puzzle[row][column] = 0;
+    if (method === "double") puzzle[mirrorRow][mirrorColumn] = 0;
+    if (countAntiDiagonalSolutions(puzzle) !== 1) { puzzle[row][column] = value; if (method === "double") puzzle[mirrorRow][mirrorColumn] = mirrorValue; }
+  }
+  return { puzzle, solution };
 }
+
+
 
 function digQueen(method: DiggingMethod) {
   const solution = generateGrid("queen");
@@ -948,7 +962,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
       const dug = digDiagonal(diggingMethod);
       setGrid(dug.puzzle); setSolution(dug.solution);
       setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution));
-    } else if (mode === "queen") {
+    } else if (mode === "anti-diagonal") { const dug = digAntiDiagonal(diggingMethod); setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution, "standard")); } else if (mode === "queen") {
       const dug = digQueen(diggingMethod);
       setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution, "queen"));
     } else {
@@ -1119,13 +1133,14 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
 
   return (
     <main className="page">
-      <style>{`.diagonal-guides line { stroke-width: 1.8 !important; stroke-dasharray: 1.5 2.4 !important; }`}</style>
+      <style>{`.diagonal-guides line { stroke-width: 1.8 !important; stroke-dasharray: 1.5 2.4 !important; } .mode-picker{display:none!important}.mode-select{display:block}.mode-select select{width:100%;min-height:2.7rem;border:1px solid #15803d;border-radius:.4rem;padding:.55rem .85rem;background:#f0fdf4;color:#14532d;font:inherit;font-weight:700;cursor:pointer}.mode-dashboard>.mode-description{margin:.65rem 0 0;color:#374151;line-height:1.4}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}`}</style>
       <header className="site-header">
         <h1>Diagonalize My Sudoku</h1>
       </header>
       <div className="app-layout">
         <aside className="mode-dashboard" aria-label="Puzzle modes">
           <p className="dashboard-title">Puzzle modes</p>
+          <label className="mode-select"><span className="sr-only">Puzzle mode</span><select value={mode} onChange={event => selectMode(event.target.value as Mode)} aria-label="Puzzle mode">{modeOptions.map(option => <option value={option.mode} key={option.mode}>{option.label}</option>)}</select></label><p className="mode-description">{descriptions[mode]}</p>
           <div className="mode-picker">
             {modeOptions.map(option => <div className="mode-card" key={option.mode}>
               <button className={mode === option.mode ? "active" : ""} onClick={() => selectMode(option.mode)}>

@@ -461,6 +461,55 @@ function solveDiagonalGrid(startGrid: Grid): Grid | null {
   return search() ? grid : null;
 }
 
+function solveQueenGrid(startGrid: Grid): Grid | null {
+  const grid = startGrid.map(row => [...row]);
+  const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0);
+  const queenDescending = new Set<number>(), queenAscending = new Set<number>();
+  const queenBit = 1 << 8;
+  const houseFor = (row: number, column: number) => Math.floor(row / 3) * 3 + Math.floor(column / 3);
+  const add = (row: number, column: number, digit: number) => {
+    const bit = 1 << (digit - 1), house = houseFor(row, column);
+    rows[row] |= bit; columns[column] |= bit; houses[house] |= bit;
+    if (digit === 9) { queenDescending.add(row - column); queenAscending.add(row + column); }
+  };
+  const remove = (row: number, column: number, digit: number) => {
+    const bit = 1 << (digit - 1), house = houseFor(row, column);
+    rows[row] ^= bit; columns[column] ^= bit; houses[house] ^= bit;
+    if (digit === 9) { queenDescending.delete(row - column); queenAscending.delete(row + column); }
+  };
+
+  for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) {
+    const digit = grid[row][column];
+    if (!digit) continue;
+    const bit = 1 << (digit - 1), house = houseFor(row, column);
+    if (digit < 1 || digit > 9 || (rows[row] | columns[column] | houses[house]) & bit) return null;
+    if (digit === 9 && (queenDescending.has(row - column) || queenAscending.has(row + column))) return null;
+    add(row, column, digit);
+  }
+
+  const search = (): boolean => {
+    let bestRow = -1, bestColumn = -1, bestChoices = 0, fewest = 10;
+    for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) if (!grid[row][column]) {
+      const house = houseFor(row, column);
+      let choices = allDigits & ~(rows[row] | columns[column] | houses[house]);
+      if (queenDescending.has(row - column) || queenAscending.has(row + column)) choices &= ~queenBit;
+      const count = bitCount(choices);
+      if (!count) return false;
+      if (count < fewest) { bestRow = row; bestColumn = column; bestChoices = choices; fewest = count; }
+    }
+    if (bestRow < 0) return true;
+    for (let digit = 1; digit <= 9; digit++) if (bestChoices & (1 << (digit - 1))) {
+      grid[bestRow][bestColumn] = digit;
+      add(bestRow, bestColumn, digit);
+      if (search()) return true;
+      remove(bestRow, bestColumn, digit);
+      grid[bestRow][bestColumn] = 0;
+    }
+    return false;
+  };
+  return search() ? grid : null;
+}
+
 // This is a GPL-3.0 adaptation of sudokUI's board/rating approach.
 // Source: https://github.com/AImenes/sudokUI (board.ts, ratings.ts and its
 // human solver).  It adds the two X-Sudoku units to the board model.  As in
@@ -987,9 +1036,14 @@ export default function Home({ initialMode = "diagonal" }: { initialMode?: Mode 
     const text = puzzleInput.replaceAll(/\s/g, "");
     if (!/^[1-9.]{81}$/.test(text)) { setInputError("Enter exactly 81 digits or periods."); return; }
     const puzzle = Array.from({ length: 9 }, (_, row) => text.slice(row * 9, row * 9 + 9).split("").map(value => value === "." ? 0 : Number(value)));
-    const solved = solveDiagonalGrid(puzzle);
-    if (!solved || countDiagonalSolutions(puzzle) !== 1) { setInputError("This must be a valid diagonal sudoku with one solution."); return; }
-    setMode("diagonal"); setGrid(puzzle); setSolution(solved); setDifficulty(rateDiagonalPuzzle(puzzle, solved));
+    const importingQueen = mode === "queen";
+    const solved = importingQueen ? solveQueenGrid(puzzle) : solveDiagonalGrid(puzzle);
+    const unique = importingQueen ? countQueenSolutions(puzzle) === 1 : countDiagonalSolutions(puzzle) === 1;
+    if (!solved || !unique) {
+      setInputError(importingQueen ? "This must be a valid Queen sudoku with one solution." : "This must be a valid diagonal sudoku with one solution.");
+      return;
+    }
+    setGrid(puzzle); setSolution(solved); setDifficulty(rateDiagonalPuzzle(puzzle, solved, importingQueen ? "queen" : "diagonal"));
     setElapsed(null); setWalkthroughIndex(0); setCopiedGrid(null); setInputError(null); setIsBuiltPuzzle(false);
   };
   const copyGrid = async (board: Grid, kind: "puzzle" | "solution") => {
@@ -1210,7 +1264,7 @@ export default function Home({ initialMode = "diagonal" }: { initialMode?: Mode 
         </aside>}
       </div>
       <section className="puzzle-loader">
-        <label htmlFor="puzzle-input">Load an 81-cell diagonal puzzle</label>
+        <label htmlFor="puzzle-input">Load an 81-cell {mode === "queen" ? "Queen" : "diagonal"} puzzle</label>
         <textarea id="puzzle-input" value={puzzleInput} onChange={event => setPuzzleInput(event.target.value)} placeholder="Use digits 1–9 and . for blanks" rows={3} />
         <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>
         {inputError && <p role="alert">{inputError}</p>}

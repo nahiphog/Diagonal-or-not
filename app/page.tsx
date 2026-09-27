@@ -912,7 +912,7 @@ function digQueen(method: DiggingMethod) {
   return { puzzle, solution };
 }
 
-export default function Home({ initialMode = "diagonal", showQueenSimulation = false }: { initialMode?: Mode; showQueenSimulation?: boolean }) {
+export default function Home({ initialMode = "diagonal", showQueenSimulation = false, showQueenImport = false }: { initialMode?: Mode; showQueenSimulation?: boolean; showQueenImport?: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [grid, setGrid] = useState<Grid>(emptyGrid);
@@ -937,8 +937,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
   const [completedSimulationTrials, setCompletedSimulationTrials] = useState(0);
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationOutputLimit, setSimulationOutputLimit] = useState("18");
-  const [simulationOutput, setSimulationOutput] = useState<Grid | null>(null);
-  const [simulationOutputGivens, setSimulationOutputGivens] = useState<number | null>(null);
+  const [simulationOutputs, setSimulationOutputs] = useState<Array<{ puzzle: Grid; givens: number }>>([]);
   const buildStartedAt = useRef(0);
   const simulationCancelled = useRef(false);
   const showsDiagonalGuides = mode === "diagonal" || mode === "anti-diagonal" || mode === "one-of-each";
@@ -982,7 +981,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     const trials = Number(simulationTrials);
     if (!Number.isInteger(trials) || trials < 1 || trials > 10000) return;
     simulationCancelled.current = false;
-    setIsSimulating(true); setSimulationTally({}); setCompletedSimulationTrials(0); setSimulationOutput(null); setSimulationOutputGivens(null);
+    setIsSimulating(true); setSimulationTally({}); setCompletedSimulationTrials(0); setSimulationOutputs([]);
     const tally: Record<number, number> = {};
     let completed = 0;
     const runBatch = () => {
@@ -1169,7 +1168,10 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>
         <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
         <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
-        {mode === "queen" && !showQueenSimulation && <button className="generate-button simulation-link" onClick={() => router.push("/queen_sudoku/simulation/")}>Simulation</button>}
+        {mode === "queen" && <>
+          <button className="generate-button simulation-link" onClick={() => router.push("/queen_sudoku/simulation/")}>Simulation</button>
+          <button className="generate-button simulation-link" onClick={() => router.push("/queen_sudoku/import_grid/")}>Import a grid</button>
+        </>}
       </div>
       <section className="puzzle-builder" aria-label="Build a puzzle">
         <div className="builder-heading">
@@ -1264,12 +1266,12 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
           <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>
         </aside>}
       </div>
-      <section className="puzzle-loader">
+      {(!showQueenSimulation && (mode !== "queen" || showQueenImport)) && <section className="puzzle-loader">
         <label htmlFor="puzzle-input">Load an 81-cell {mode === "queen" ? "Queen" : "diagonal"} puzzle</label>
         <textarea id="puzzle-input" value={puzzleInput} onChange={event => setPuzzleInput(event.target.value)} placeholder="Use digits 1–9 and . for blanks" rows={3} />
         <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>
         {inputError && <p role="alert">{inputError}</p>}
-      </section>
+      </section>}
       {solution && <section className="dig-results">
         {difficulty && difficulty.walkthrough.length > 0 && (() => {
           const step = difficulty.walkthrough[walkthroughIndex];

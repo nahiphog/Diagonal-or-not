@@ -1003,6 +1003,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
   const [minimumDifficulty, setMinimumDifficulty] = useState("500");
   const [maximumDifficulty, setMaximumDifficulty] = useState("10000");
   const [isBuilderExpanded, setIsBuilderExpanded] = useState(false);
+  const [diagonalTab, setDiagonalTab] = useState<"generate" | "custom-build" | "simulation" | "import">("generate");
   const [simulationTrials, setSimulationTrials] = useState("1000");
   const [simulationTally, setSimulationTally] = useState<Record<number, number>>({});
   const [completedSimulationTrials, setCompletedSimulationTrials] = useState(0);
@@ -1260,11 +1261,12 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         <div className="workspace">
       <div className="puzzle-actions">
         {mode === "diagonal" && <>
-          <button className="generate-button simulation-link">Generate</button>
-          <button className="generate-button simulation-link">Custom build</button>
-          <button className="generate-button simulation-link">Simulation</button>
-          <button className="generate-button simulation-link">Import a grid</button>
+          <button className={`generate-button simulation-link ${diagonalTab === "generate" ? "active" : ""}`} onClick={() => setDiagonalTab("generate")}>Generate</button>
+          <button className={`generate-button simulation-link ${diagonalTab === "custom-build" ? "active" : ""}`} onClick={() => setDiagonalTab("custom-build")}>Custom build</button>
+          <button className={`generate-button simulation-link ${diagonalTab === "simulation" ? "active" : ""}`} onClick={() => setDiagonalTab("simulation")}>Simulation</button>
+          <button className={`generate-button simulation-link ${diagonalTab === "import" ? "active" : ""}`} onClick={() => setDiagonalTab("import")}>Import a grid</button>
         </>}
+        {(mode !== "diagonal" || diagonalTab === "custom-build") && <>
         <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>
         <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
         <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
@@ -1276,7 +1278,9 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
           <button className="generate-button simulation-link" onClick={() => router.push("/anti_diagonal/simulation/")}>Simulation</button>
           <button className="generate-button simulation-link" onClick={() => router.push("/anti_diagonal/import_grid/")}>Import a grid</button>
         </>}
+        </>}
       </div>
+      {(mode !== "diagonal" || diagonalTab === "custom-build") && <>
       <section className="puzzle-builder" aria-label="Build a puzzle">
         <div className="builder-heading">
           <h2>Build a puzzle</h2>
@@ -1357,6 +1361,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         })()}
         <div className="simulation-output" aria-live="polite"><h3>Qualifying simulation grids</h3>{(() => { const filteredOutputs = simulationOutputs.filter(({ givens }) => givens <= Number(simulationOutputLimit)); return filteredOutputs.length ? <><p>{filteredOutputs.length} grid{filteredOutputs.length === 1 ? "" : "s"} with at most {simulationOutputLimit} givens.</p><div className="simulation-grid-list">{filteredOutputs.map(({ puzzle, givens }, outputIndex) => <div className="simulation-grid-card" key={`${givens}-${outputIndex}`}><p>Trial grid {outputIndex + 1}: {givens} givens</p><div className="grid-frame"><div className="grid" aria-label={`Anti-diagonal simulation grid ${outputIndex + 1}`}>{puzzle.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}</div></div></div>)}</div></> : <p>Every generated grid with at most {simulationOutputLimit} givens will appear here.</p>; })()}</div>
       </section>}
+      </>}
       <div className={`puzzle-output ${solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">
           <div className="grid-frame">
@@ -1396,7 +1401,13 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
           <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>
         </aside>}
       </div>
-      {(!showQueenSimulation && !showAntiDiagonalSimulation && (mode !== "queen" || showQueenImport) && (mode !== "anti-diagonal" || showAntiDiagonalImport)) && <section className="puzzle-loader">
+      {mode === "diagonal" && diagonalTab === "import" && <section className="puzzle-loader">
+        <label htmlFor="puzzle-input">Load an 81-cell diagonal puzzle</label>
+        <textarea id="puzzle-input" value={puzzleInput} onChange={event => setPuzzleInput(event.target.value)} placeholder="Use digits 1–9 and . for blanks" rows={3} />
+        <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>
+        {inputError && <p role="alert">{inputError}</p>}
+      </section>}
+      {mode !== "diagonal" && (!showQueenSimulation && !showAntiDiagonalSimulation && (mode !== "queen" || showQueenImport) && (mode !== "anti-diagonal" || showAntiDiagonalImport)) && <section className="puzzle-loader">
         <label htmlFor="puzzle-input">Load an 81-cell {mode === "queen" ? "Queen" : mode === "anti-diagonal" ? "Anti-diagonal" : "diagonal"} puzzle</label>
         <textarea id="puzzle-input" value={puzzleInput} onChange={event => setPuzzleInput(event.target.value)} placeholder="Use digits 1–9 and . for blanks" rows={3} />
         <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>

@@ -659,18 +659,24 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
     }
     if (moveMade) continue;
 
-    // Every standard row, column and box contains one 9. When all of a
-    // unit's possible 9s lie on one of Queen Sudoku's 22 relevant diagonals,
-    // that diagonal must receive the unit's 9, so no other cell on it can be
-    // 9. This is the Queen-specific locked-candidate rule, at the same
-    // priority and score as the other locked-candidate techniques.
-    if (variant === "queen") for (const unit of standardUnits) for (const diagonal of queenDiagonals) {
-      const bit = 1 << 8;
-      const locations = unit.filter(cell => !values[cell] && candidates[cell] & bit);
-      if (locations.length < 2 || !locations.every(cell => diagonal.cells.includes(cell))) continue;
-      const targets = diagonal.cells.filter(cell => !unit.includes(cell) && !values[cell] && candidates[cell] & bit);
-      const explanation = `In a standard Sudoku unit, 9 must appear exactly once. Its green candidates at ${locations.map(cellName).join(", ")} all lie on this Queen diagonal, so one of them must be the unit's 9. A second 9 anywhere else on the same diagonal would attack it, so the red 9s are removed.`;
-      if (targets.length && add("Locked Candidates (9 Diagonal)", () => eliminate(targets.map(cell => [cell, 9])), locations.map(cell => ({ cell, digit: 9 })), explanation)) { moveMade = true; break; }
+    // Every row, column, and box must contain one 9. For each such unit,
+    // collect every remaining possible position for its 9 (the green cells).
+    // Any other candidate 9 that sees *all* of those positions is impossible:
+    // whichever green position receives the unit's required 9 would attack it.
+    // "Sees" here deliberately includes ordinary Sudoku peers and Queen's
+    // 22 usable diagonals. This catches a cell sharing a row with one green
+    // 9 and diagonals with the other green 9s.
+    if (variant === "queen") for (let unitIndex = 0; unitIndex < standardUnits.length && !moveMade; unitIndex++) {
+      const unit = standardUnits[unitIndex];
+      const locations = unit.filter(cell => !values[cell] && candidates[cell] & (1 << 8));
+      if (locations.length < 2) continue;
+      const targets = Array.from({ length: 81 }, (_, cell) => cell).filter(cell => {
+        if (values[cell] || locations.includes(cell) || !(candidates[cell] & (1 << 8))) return false;
+        const visibleCells = new Set([...peers[cell], ...queenDiagonalPeers[cell]]);
+        return locations.every(location => visibleCells.has(location));
+      });
+      const explanation = `In ${unitName(unitIndex)}, exactly one cell must contain 9. The green 9s at ${locations.map(cellName).join(", ")} are every remaining place for that unit's 9. Each red 9 sees all of those green cells through a row, column, box, or Queen diagonal. Whichever green cell is 9 would attack a red cell, so the red 9s at ${targets.map(cellName).join(", ")} are impossible.`;
+      if (targets.length && add("Locked Candidates (9 Diagonal)", () => eliminate(targets.map(cell => [cell, 9])), locations.map(cell => ({ cell, digit: 9 })), explanation)) moveMade = true;
     }
     if (moveMade) continue;
 

@@ -767,6 +767,30 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
     }
     if (moveMade) continue;
 
+    // Once three distinct digits have been placed on a marked Anti-diagonal,
+    // they are its complete digit set. Every remaining cell on that diagonal
+    // is restricted to those three digits. This is deliberately a visible
+    // deduction rather than an implicit candidate filter so the walkthrough
+    // can show the three green digits that establish the restriction.
+    if (variant === "anti-diagonal") for (const diagonal of [27, 28]) {
+      const knownDigits = [...new Set(units[diagonal].map(cell => values[cell]).filter(Boolean))];
+      if (knownDigits.length !== 3) continue;
+      const allowed = knownDigits.reduce((mask, digit) => mask | (1 << (digit - 1)), 0);
+      const targets = units[diagonal].flatMap(cell => !values[cell]
+        ? digits(candidates[cell] & ~allowed).map(digit => [cell, digit] as [number, number])
+        : []);
+      if (!targets.length) continue;
+      const involved = units[diagonal]
+        .filter(cell => values[cell] && knownDigits.includes(values[cell]))
+        .map(cell => ({ cell, digit: values[cell] }));
+      const explanation = `On ${unitName(diagonal)}, the green digits ${knownDigits.join(", ")} are already placed at ${involved.map(item => cellName(item.cell)).join(", ")}. An Anti-diagonal contains exactly three distinct digits, so these are the only digits that can appear anywhere on this diagonal. Every red Snyder notation other than ${knownDigits.join(", ")} is therefore impossible and is removed.`;
+      if (add("Locked Candidates (Anti-diagonal)", () => eliminate(targets), involved, explanation, [diagonal])) {
+        moveMade = true;
+        break;
+      }
+    }
+    if (moveMade) continue;
+
     // In Anti-diagonal Sudoku, R5C5 belongs to both marked diagonals. Its
     // digit is consequently one of the three digits repeated in all three
     // three-cell segments of each diagonal. In each corner box, that digit

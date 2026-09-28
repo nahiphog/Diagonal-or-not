@@ -42,6 +42,7 @@ const sudokUiTechniqueDifficulty: Record<string, number> = {
   "Locked Candidates (Pointing)": 50,
   "Locked Candidates (Claiming)": 50,
   "Locked Candidates (Diagonal)": 50,
+  "Locked Candidates (Anti-diagonal)": 50,
   "Locked Candidates (9 Diagonal)": 50,
   "Naked Pair": 60,
   "Hidden Pair": 70,
@@ -593,11 +594,10 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
     Array.from({ length: 9 }, (_, index) => (index + 1) * 8),
   ];
   const units = [...standardUnits, ...diagonalUnits];
-  // Anti-diagonal uses a global "at most three digits" condition, not a
-  // no-repeat house. Its rating engine includes the two diagonals as peer units
-  // for all techniques except "Locked Candidates (Diagonal)", which is
-  // explicitly disabled because it assumes each diagonal contains 1-9 exactly once.
-  const hasDistinctDiagonals = variant === "diagonal" || variant === "anti-diagonal";
+  // Anti-diagonal permits repeats on the marked diagonals: each one uses only
+  // three distinct digits. It therefore cannot use a diagonal as a normal
+  // no-repeat house. Its dedicated corner-box deduction appears below.
+  const hasDistinctDiagonals = variant === "diagonal";
   const activeUnits = hasDistinctDiagonals ? units : standardUnits;
   const unitsFor = Array.from({ length: 81 }, (_, index) => activeUnits.map((unit, unitIndex) => unit.includes(index) ? unitIndex : -1).filter(unit => unit >= 0));
   const peers = Array.from({ length: 81 }, (_, index) => [...new Set(unitsFor[index].flatMap(unit => activeUnits[unit]))].filter(cell => cell !== index));
@@ -767,6 +767,39 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
     }
     if (moveMade) continue;
 
+    // In Anti-diagonal Sudoku, R5C5 belongs to both marked diagonals. Its
+    // digit is consequently one of the three digits repeated in all three
+    // three-cell segments of each diagonal. In each corner box, that digit
+    // must therefore be on the marked three-cell segment, never elsewhere in
+    // the box. Treat one corner at a time so the walkthrough can show the
+    // green evidence and the corresponding red eliminations clearly.
+    if (variant === "anti-diagonal" && values[40]) {
+      const digit = values[40];
+      const bit = 1 << (digit - 1);
+      const cornerSegments = [
+        { box: 18, diagonal: 27, cells: [0, 10, 20] }, // R1C1, R2C2, R3C3
+        { box: 26, diagonal: 27, cells: [60, 70, 80] }, // R7C7, R8C8, R9C9
+        { box: 20, diagonal: 28, cells: [8, 16, 24] }, // R1C9, R2C8, R3C7
+        { box: 24, diagonal: 28, cells: [56, 64, 72] }, // R7C3, R8C2, R9C1
+      ];
+      for (const segment of cornerSegments) {
+        const supports = segment.cells.filter(cell => values[cell] === digit || (!values[cell] && candidates[cell] & bit));
+        const targets = standardUnits[segment.box].filter(cell =>
+          !segment.cells.includes(cell) && !values[cell] && candidates[cell] & bit,
+        );
+        if (!supports.length || !targets.length) continue;
+        const involved = [40, ...supports]
+          .map(cell => ({ cell, digit }))
+          .filter((item, index, items) => items.findIndex(other => other.cell === item.cell) === index);
+        const explanation = `R5C5 contains ${digit}, so ${digit} is one of the three digits used by both marked Anti-diagonals. On ${unitName(segment.diagonal)}, ${digit} must occur in this corner segment at ${segment.cells.map(cellName).join(", ")}. The green ${digit}s show its remaining possible positions there. Therefore, in ${unitName(segment.box)}, every red ${digit} outside that segment is impossible and is removed.`;
+        if (add("Locked Candidates (Anti-diagonal)", () => eliminate(targets.map(cell => [cell, digit])), involved, explanation, [segment.diagonal])) {
+          moveMade = true;
+          break;
+        }
+      }
+    }
+    if (moveMade) continue;
+
     // Every row, column, and box must contain one 9. For each such unit,
     // collect every remaining possible position for its 9 (the green cells).
     // Any other candidate 9 that sees *all* of those positions is impossible:
@@ -916,7 +949,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
   }
 
   const scores = sudokUiTechniqueDifficulty;
-  const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Locked Candidates (Pointing)": "Medium", "Locked Candidates (Claiming)": "Medium", "Locked Candidates (Diagonal)": "Medium", "Locked Candidates (9 Diagonal)": "Medium", "Naked Pair": "Medium", "Naked Triple": "Medium", "Hidden Pair": "Medium", "Hidden Triple": "Medium", "Naked Quadruple": "Hard", "Hidden Quadruple": "Hard", "X-Wing": "Hard", "Swordfish": "Hard", "Jellyfish": "Hard", "W-Wing": "Hard", "XY-Wing": "Hard", "XYZ-Wing": "Hard", "Brute Force": "Extreme" };
+  const levels: Record<string, string> = { "Full House": "Beginner", "Naked Single": "Beginner", "Hidden Single": "Beginner", "Locked Candidates (Pointing)": "Medium", "Locked Candidates (Claiming)": "Medium", "Locked Candidates (Diagonal)": "Medium", "Locked Candidates (Anti-diagonal)": "Medium", "Locked Candidates (9 Diagonal)": "Medium", "Naked Pair": "Medium", "Naked Triple": "Medium", "Hidden Pair": "Medium", "Hidden Triple": "Medium", "Naked Quadruple": "Hard", "Hidden Quadruple": "Hard", "X-Wing": "Hard", "Swordfish": "Hard", "Jellyfish": "Hard", "W-Wing": "Hard", "XY-Wing": "Hard", "XYZ-Wing": "Hard", "Brute Force": "Extreme" };
   const order = ["Beginner", "Easy", "Medium", "Tricky", "Hard", "Unfair", "Extreme", "Nightmare"];
   const maxScore: Record<string, number> = { Beginner: 400, Easy: 800, Medium: 1000, Tricky: 1150, Hard: 1600, Unfair: 1800, Extreme: 3000, Nightmare: Number.MAX_SAFE_INTEGER };
   const score = steps.reduce((total, step) => total + scores[step], 0);

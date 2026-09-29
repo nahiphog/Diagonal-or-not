@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Grid = number[][];
-export type Mode = "diagonal" | "anti-diagonal" | "one-of-each" | "double-diagonal" | "bent-diagonal" | "triple-diagonal" | "queen";
+export type Mode = "diagonal" | "anti-diagonal" | "one-of-each" | "double-diagonal" | "bent-diagonal" | "triple-diagonal" | "queen" | "bla-bla-bla";
 type DiggingMethod = "single" | "double";
 type DiagonalAction = "generate" | "custom-build" | "simulation" | "import" | "verify";
 type CandidateRemoval = { cell: number; digit: number };
@@ -22,6 +22,7 @@ export const modePaths: Record<Mode, string> = {
   "bent-diagonal": "/bent_diagonal/",
   "triple-diagonal": "/triple_diagonal/",
   queen: "/queen_sudoku/",
+  "bla-bla-bla": "/bla_bla_bla/",
 };
 const queenDiagonals: QueenDiagonal[] = [
   ...[0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7].map(offset => ({
@@ -1195,6 +1196,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     "bent-diagonal": "Each of the four bent diagonals must contain the digits 1-9.",
     "triple-diagonal": "Digits must not repeat along any marked diagonal.",
     queen: "9s cannot see each other along a diagonal.",
+    "bla-bla-bla": "A standard Sudoku grid for sanity-checking the category selector.",
   };
   const modeOptions: { mode: Mode; label: string }[] = [
     { mode: "diagonal", label: "Diagonal" },
@@ -1204,6 +1206,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     { mode: "bent-diagonal", label: "Bent diagonal" },
     { mode: "triple-diagonal", label: "Triple diagonal" },
     { mode: "queen", label: "Queen sudoku" },
+    { mode: "bla-bla-bla", label: "BLA BLA BLA" },
   ];
 
   return (

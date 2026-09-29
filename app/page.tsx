@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Grid = number[][];
-export type Mode = "diagonal" | "anti-diagonal" | "one-of-each" | "double-diagonal" | "bent-diagonal" | "triple-diagonal" | "queen" | "temp";
+export type Mode = "diagonal" | "anti-diagonal" | "one-of-each" | "double-diagonal" | "bent-diagonal" | "triple-diagonal" | "queen";
 type DiggingMethod = "single" | "double";
+type DiagonalAction = "generate" | "custom-build" | "simulation" | "import" | "verify";
 type CandidateRemoval = { cell: number; digit: number };
 type WalkthroughStep = { technique: string; values: number[]; candidates: number[]; affectedCells: number[]; placedCells: number[]; removed: CandidateRemoval[]; involved: CandidateRemoval[]; highlightedDiagonals: number[]; message: string };
 type DifficultyRating = { rating: string; score: number; techniques: string[]; logical: boolean; walkthrough: WalkthroughStep[]; tally: Record<string, number>; givens: number[] };
@@ -21,7 +22,6 @@ export const modePaths: Record<Mode, string> = {
   "bent-diagonal": "/bent_diagonal/",
   "triple-diagonal": "/triple_diagonal/",
   queen: "/queen_sudoku/",
-  temp: "/temp/",
 };
 const queenDiagonals: QueenDiagonal[] = [
   ...[0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5, -6, 6, -7, 7].map(offset => ({
@@ -187,7 +187,6 @@ function generateQueenSudoku(): Grid {
 function generateGrid(mode: Mode): Grid {
   if (mode === "one-of-each") return generateOneOfEach();
   if (mode === "queen") return generateQueenSudoku();
-  if (mode === "temp") return emptyGrid();
 
   if (mode === "anti-diagonal") {
     const digitMap = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]);
@@ -464,62 +463,6 @@ function solveDiagonalGrid(startGrid: Grid): Grid | null {
   return search() ? grid : null;
 }
 
-function solveAntiDiagonalGrid(startGrid: Grid): Grid | null {
-  const grid = startGrid.map(row => [...row]);
-  const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0);
-  const diagonalMasks = [0, 0];
-  const diagonalCounts = [Array(10).fill(0), Array(10).fill(0)];
-  const diagonalsFor = (row: number, column: number) => [row === column ? 0 : -1, row + column === 8 ? 1 : -1].filter(index => index >= 0);
-  const addDiagonalDigit = (row: number, column: number, digit: number) => {
-    for (const diagonal of diagonalsFor(row, column)) {
-      diagonalCounts[diagonal][digit] += 1;
-      diagonalMasks[diagonal] |= 1 << (digit - 1);
-    }
-  };
-  const removeDiagonalDigit = (row: number, column: number, digit: number) => {
-    for (const diagonal of diagonalsFor(row, column)) {
-      diagonalCounts[diagonal][digit] -= 1;
-      if (!diagonalCounts[diagonal][digit]) diagonalMasks[diagonal] &= ~(1 << (digit - 1));
-    }
-  };
-
-  for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) {
-    const digit = grid[row][column];
-    if (!digit) continue;
-    if (digit < 1 || digit > 9) return null;
-    const bit = 1 << (digit - 1), house = Math.floor(row / 3) * 3 + Math.floor(column / 3);
-    if ((rows[row] | columns[column] | houses[house]) & bit) return null;
-    rows[row] |= bit; columns[column] |= bit; houses[house] |= bit;
-    addDiagonalDigit(row, column, digit);
-    if (diagonalsFor(row, column).some(diagonal => bitCount(diagonalMasks[diagonal]) > 3)) return null;
-  }
-
-  const search = (): boolean => {
-    let bestRow = -1, bestColumn = -1, bestChoices = 0, fewest = 10;
-    for (let row = 0; row < 9; row++) for (let column = 0; column < 9; column++) if (!grid[row][column]) {
-      const house = Math.floor(row / 3) * 3 + Math.floor(column / 3);
-      let choices = allDigits & ~(rows[row] | columns[column] | houses[house]);
-      for (const diagonal of diagonalsFor(row, column)) {
-        if (bitCount(diagonalMasks[diagonal]) === 3) choices &= diagonalMasks[diagonal];
-      }
-      const count = bitCount(choices);
-      if (!count) return false;
-      if (count < fewest) { bestRow = row; bestColumn = column; bestChoices = choices; fewest = count; }
-    }
-    if (bestRow < 0) return true;
-    for (let digit = 1; digit <= 9; digit++) if (bestChoices & (1 << (digit - 1))) {
-      const bit = 1 << (digit - 1), house = Math.floor(bestRow / 3) * 3 + Math.floor(bestColumn / 3);
-      grid[bestRow][bestColumn] = digit; rows[bestRow] |= bit; columns[bestColumn] |= bit; houses[house] |= bit;
-      addDiagonalDigit(bestRow, bestColumn, digit);
-      if (search()) return true;
-      removeDiagonalDigit(bestRow, bestColumn, digit);
-      grid[bestRow][bestColumn] = 0; rows[bestRow] ^= bit; columns[bestColumn] ^= bit; houses[house] ^= bit;
-    }
-    return false;
-  };
-  return search() ? grid : null;
-}
-
 function solveQueenGrid(startGrid: Grid): Grid | null {
   const grid = startGrid.map(row => [...row]);
   const rows = Array(9).fill(0), columns = Array(9).fill(0), houses = Array(9).fill(0);
@@ -594,9 +537,9 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
     Array.from({ length: 9 }, (_, index) => (index + 1) * 8),
   ];
   const units = [...standardUnits, ...diagonalUnits];
-  // Anti-diagonal permits repeats on the marked diagonals: each one uses only
-  // three distinct digits. It therefore cannot use a diagonal as a normal
-  // no-repeat house. Its dedicated corner-box deduction appears below.
+  // Anti-diagonal uses a global "at most three digits" condition, not a
+  // no-repeat house. Its standard deductions must therefore only use rows,
+  // columns and boxes; the two diagonals are not peer units in that variant.
   const hasDistinctDiagonals = variant === "diagonal";
   const activeUnits = hasDistinctDiagonals ? units : standardUnits;
   const unitsFor = Array.from({ length: 81 }, (_, index) => activeUnits.map((unit, unitIndex) => unit.includes(index) ? unitIndex : -1).filter(unit => unit >= 0));
@@ -633,7 +576,16 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
     return items.flatMap((item, index) => combinations(items.slice(index + 1), size - 1).map(rest => [item, ...rest]));
   };
   const cellName = (cell: number) => `R${Math.floor(cell / 9) + 1}C${cell % 9 + 1}`;
-  const unitName = (unit: number) => unit < 9 ? `row ${unit + 1}` : unit < 18 ? `column ${unit - 8}` : unit < 27 ? `the ${Math.floor((unit - 18) / 3) + 1}${["st", "nd", "rd"][((unit - 18) % 3)] ?? "th"} 3×3 box` : unit === 27 ? "the diagonal from R1C1 to R9C9" : "the diagonal from R1C9 to R9C1";
+  const unitName = (unit: number) => {
+    if (unit < 9) return `row ${unit + 1}`;
+    if (unit < 18) return `column ${unit - 8}`;
+    if (unit < 27) {
+      const box = unit - 17;
+      const suffix = box % 100 >= 11 && box % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[box % 10] ?? "th");
+      return `the ${box}${suffix} 3×3 box`;
+    }
+    return unit === 27 ? "the diagonal from R1C1 to R9C9" : "the diagonal from R1C9 to R9C1";
+  };
   const add = (name: string, action: () => void, involved: CandidateRemoval[] = [], explanation?: string, highlightedDiagonals: number[] = []) => {
     const beforeValues = [...values];
     const beforeCandidates = [...candidates];
@@ -668,6 +620,51 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
     return true;
   };
 
+  const applyAntiDiagonalLocks = () => {
+    if (variant !== "anti-diagonal") return false;
+
+    // Each marked diagonal is split into three 3-cell segments, one inside
+    // each of its three 3×3 boxes. The cells in a segment are distinct by the
+    // normal box rule. Since the whole diagonal may use only three digits,
+    // every segment contains that same three-digit set. Therefore, a digit
+    // impossible in any one segment is impossible everywhere on the diagonal.
+    for (const diagonal of [27, 28]) {
+      const diagonalCells = units[diagonal];
+      const segments = [diagonalCells.slice(0, 3), diagonalCells.slice(3, 6), diagonalCells.slice(6, 9)];
+      for (const segment of segments) for (let digit = 1; digit <= 9; digit++) {
+        const bit = 1 << (digit - 1);
+        const canAppearInSegment = segment.some(cell => values[cell] === digit || (!values[cell] && Boolean(candidates[cell] & bit)));
+        if (canAppearInSegment) continue;
+        const targets = diagonalCells
+          .filter(cell => !segment.includes(cell) && !values[cell] && (candidates[cell] & bit))
+          .map(cell => [cell, digit] as [number, number]);
+        if (!targets.length) continue;
+        const blockers = [...new Set(segment.flatMap(cell => peers[cell].filter(peer => values[peer] === digit)))];
+        const segmentNames = segment.map(cellName).join(", ");
+        const blockerDescription = blockers.length
+          ? ` The green ${digit}${blockers.length === 1 ? " at" : "s at"} ${blockers.map(cellName).join(", ")} ${blockers.length === 1 ? "sees" : "see"} every cell of that segment, so none of them can be ${digit}.`
+          : " Normal Sudoku candidates already rule this digit out of every cell in that segment.";
+        const explanation = `The cells ${segmentNames} form one three-cell segment of ${unitName(diagonal)}. Each of the diagonal's three segments must contain the same three digits. ${digit} has no possible position in this segment, so it cannot be one of the diagonal's three permitted digits.${blockerDescription} The red ${digit}s elsewhere on this marked diagonal are therefore removed.`;
+        const involved = blockers.map(cell => ({ cell, digit }));
+        if (add("Locked Candidates (Anti-diagonal)", () => eliminate(targets), involved, explanation, [diagonal])) return true;
+      }
+
+      const fixedDigits = [...new Set(diagonalCells.map(cell => values[cell]).filter(Boolean))];
+      if (fixedDigits.length !== 3) continue;
+      const allowed = fixedDigits.reduce((mask, digit) => mask | (1 << (digit - 1)), 0);
+      const targets = diagonalCells
+        .filter(cell => !values[cell])
+        .flatMap(cell => digits(candidates[cell] & ~allowed).map(digit => [cell, digit] as [number, number]));
+      if (!targets.length) continue;
+      const involved = diagonalCells
+        .filter(cell => values[cell] && fixedDigits.includes(values[cell]))
+        .map(cell => ({ cell, digit: values[cell] }));
+      const explanation = `On ${unitName(diagonal)}, the green placed digits ${fixedDigits.join(", ")} are already the three distinct digits permitted by the Anti-diagonal rule. Every remaining cell on this marked diagonal must therefore be one of these three digits. The red Snyder notations are other digits, so they are removed. Repeats of the three green digits remain allowed.`;
+      if (add("Locked Candidates (Anti-diagonal)", () => eliminate(targets), involved, explanation, [diagonal])) return true;
+    }
+    return false;
+  };
+
   walkthrough.push({
     technique: "Starting position",
     values: [...values],
@@ -684,6 +681,10 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
   // finder uses the valid house set for the selected puzzle variant.
   while (values.some(value => !value)) {
     let moveMade = false;
+    // Run the Anti-diagonal segment invariant first. A standard placement may
+    // rule a digit out of all three cells in one segment; record the resulting
+    // diagonal elimination before another standard technique masks it.
+    if (applyAntiDiagonalLocks()) continue;
     for (let unitIndex = 0; unitIndex < activeUnits.length && !moveMade; unitIndex++) {
       const blank = activeUnits[unitIndex].filter(cell => !values[cell]);
       if (blank.length === 1 && candidates[blank[0]] && add("Full House", () => place(blank[0], digits(candidates[blank[0]])[0]))) moveMade = true;
@@ -767,70 +768,13 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
     }
     if (moveMade) continue;
 
-    // Once three distinct digits have been placed on a marked Anti-diagonal,
-    // they are its complete digit set. Every remaining cell on that diagonal
-    // is restricted to those three digits. This is deliberately a visible
-    // deduction rather than an implicit candidate filter so the walkthrough
-    // can show the three green digits that establish the restriction.
-    if (variant === "anti-diagonal") for (const diagonal of [27, 28]) {
-      const knownDigits = [...new Set(units[diagonal].map(cell => values[cell]).filter(Boolean))];
-      if (knownDigits.length !== 3) continue;
-      const allowed = knownDigits.reduce((mask, digit) => mask | (1 << (digit - 1)), 0);
-      const targets = units[diagonal].flatMap(cell => !values[cell]
-        ? digits(candidates[cell] & ~allowed).map(digit => [cell, digit] as [number, number])
-        : []);
-      if (!targets.length) continue;
-      const involved = units[diagonal]
-        .filter(cell => values[cell] && knownDigits.includes(values[cell]))
-        .map(cell => ({ cell, digit: values[cell] }));
-      const explanation = `On ${unitName(diagonal)}, the green digits ${knownDigits.join(", ")} are already placed at ${involved.map(item => cellName(item.cell)).join(", ")}. An Anti-diagonal contains exactly three distinct digits, so these are the only digits that can appear anywhere on this diagonal. Every red Snyder notation other than ${knownDigits.join(", ")} is therefore impossible and is removed.`;
-      if (add("Locked Candidates (Anti-diagonal)", () => eliminate(targets), involved, explanation, [diagonal])) {
-        moveMade = true;
-        break;
-      }
-    }
-    if (moveMade) continue;
-
-    // In Anti-diagonal Sudoku, R5C5 belongs to both marked diagonals. Its
-    // digit is consequently one of the three digits repeated in all three
-    // three-cell segments of each diagonal. In each corner box, that digit
-    // must therefore be on the marked three-cell segment, never elsewhere in
-    // the box. Treat one corner at a time so the walkthrough can show the
-    // green evidence and the corresponding red eliminations clearly.
-    if (variant === "anti-diagonal" && values[40]) {
-      const digit = values[40];
-      const bit = 1 << (digit - 1);
-      const cornerSegments = [
-        { box: 18, diagonal: 27, cells: [0, 10, 20] }, // R1C1, R2C2, R3C3
-        { box: 26, diagonal: 27, cells: [60, 70, 80] }, // R7C7, R8C8, R9C9
-        { box: 20, diagonal: 28, cells: [8, 16, 24] }, // R1C9, R2C8, R3C7
-        { box: 24, diagonal: 28, cells: [56, 64, 72] }, // R7C3, R8C2, R9C1
-      ];
-      for (const segment of cornerSegments) {
-        const supports = segment.cells.filter(cell => values[cell] === digit || (!values[cell] && candidates[cell] & bit));
-        const targets = standardUnits[segment.box].filter(cell =>
-          !segment.cells.includes(cell) && !values[cell] && candidates[cell] & bit,
-        );
-        if (!supports.length || !targets.length) continue;
-        const involved = [40, ...supports]
-          .map(cell => ({ cell, digit }))
-          .filter((item, index, items) => items.findIndex(other => other.cell === item.cell) === index);
-        const explanation = `R5C5 contains ${digit}, so ${digit} is one of the three digits used by both marked Anti-diagonals. On ${unitName(segment.diagonal)}, ${digit} must occur in this corner segment at ${segment.cells.map(cellName).join(", ")}. The green ${digit}s show its remaining possible positions there. Therefore, in ${unitName(segment.box)}, every red ${digit} outside that segment is impossible and is removed.`;
-        if (add("Locked Candidates (Anti-diagonal)", () => eliminate(targets.map(cell => [cell, digit])), involved, explanation, [segment.diagonal])) {
-          moveMade = true;
-          break;
-        }
-      }
-    }
-    if (moveMade) continue;
-
     // Every row, column, and box must contain one 9. For each such unit,
     // collect every remaining possible position for its 9 (the green cells).
     // Any other candidate 9 that sees *all* of those positions is impossible:
     // whichever green position receives the unit's required 9 would attack it.
     // "Sees" here deliberately includes ordinary Sudoku peers and Queen's
-    // 22 usable diagonals. This catches a cell sharing a row with one green
-    // 9 and diagonals with the other green 9s.
+    // 22 usable diagonals. This catches, for example, a cell sharing a row
+    // with one green 9 and diagonals with the other green 9s.
     if (variant === "queen") for (let unitIndex = 0; unitIndex < standardUnits.length && !moveMade; unitIndex++) {
       const unit = standardUnits[unitIndex];
       const locations = unit.filter(cell => !values[cell] && candidates[cell] & (1 << 8));
@@ -848,7 +792,7 @@ function rateDiagonalPuzzle(startGrid: Grid, solvedGrid: Grid, variant: "diagona
     // This rule assumes that each diagonal contains every digit exactly once.
     // Anti-diagonal Sudoku permits repeats on both diagonals, so this finder
     // is explicitly disabled for an Anti-diagonal walkthrough.
-    if (variant === "diagonal") for (const diagonal of [27, 28]) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
+    if (hasDistinctDiagonals) for (const diagonal of [27, 28]) for (let digit = 1; digit <= 9 && !moveMade; digit++) {
       const bit = 1 << (digit - 1), locations = units[diagonal].filter(cell => !values[cell] && candidates[cell] & bit);
       if (locations.length !== 2) continue;
       const firstPeers = new Set(peers[locations[0]]);
@@ -1006,21 +950,28 @@ function digDiagonal(method: DiggingMethod, protectedCells = Array(81).fill(fals
     }
   }
   return { puzzle, solution };
-}function digAntiDiagonal(method: DiggingMethod) {
+}
+
+function digAntiDiagonal(method: DiggingMethod) {
   const solution = generateGrid("anti-diagonal");
   const puzzle = solution.map(row => [...row]);
-  const cells = method === "single" ? Array.from({ length: 81 }, (_, index) => [Math.floor(index / 9), index % 9]) : Array.from({ length: 81 }, (_, index) => [Math.floor(index / 9), index % 9]).filter(([row, column]) => row < 4 || (row === 4 && column <= 4));
+  const cells = method === "single"
+    ? Array.from({ length: 81 }, (_, index) => [Math.floor(index / 9), index % 9])
+    : Array.from({ length: 81 }, (_, index) => [Math.floor(index / 9), index % 9])
+      .filter(([row, column]) => row < 4 || (row === 4 && column <= 4));
+
   for (const [row, column] of shuffle(cells.map(([row, column]) => row * 9 + column)).map(cell => [Math.floor(cell / 9), cell % 9])) {
     const mirrorRow = 8 - row, mirrorColumn = 8 - column;
     const value = puzzle[row][column], mirrorValue = puzzle[mirrorRow][mirrorColumn];
     puzzle[row][column] = 0;
     if (method === "double") puzzle[mirrorRow][mirrorColumn] = 0;
-    if (countAntiDiagonalSolutions(puzzle) !== 1) { puzzle[row][column] = value; if (method === "double") puzzle[mirrorRow][mirrorColumn] = mirrorValue; }
+    if (countAntiDiagonalSolutions(puzzle) !== 1) {
+      puzzle[row][column] = value;
+      if (method === "double") puzzle[mirrorRow][mirrorColumn] = mirrorValue;
+    }
   }
   return { puzzle, solution };
 }
-
-
 
 function digQueen(method: DiggingMethod) {
   const solution = generateGrid("queen");
@@ -1042,7 +993,7 @@ function digQueen(method: DiggingMethod) {
   return { puzzle, solution };
 }
 
-export default function Home({ initialMode = "diagonal", showQueenSimulation = false, showQueenImport = false, showAntiDiagonalSimulation = false, showAntiDiagonalImport = false }: { initialMode?: Mode; showQueenSimulation?: boolean; showQueenImport?: boolean; showAntiDiagonalSimulation?: boolean; showAntiDiagonalImport?: boolean }) {
+export default function Home({ initialMode = "diagonal", showQueenSimulation = false, showQueenImport = false }: { initialMode?: Mode; showQueenSimulation?: boolean; showQueenImport?: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [grid, setGrid] = useState<Grid>(emptyGrid);
@@ -1062,13 +1013,13 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
   const [minimumDifficulty, setMinimumDifficulty] = useState("500");
   const [maximumDifficulty, setMaximumDifficulty] = useState("10000");
   const [isBuilderExpanded, setIsBuilderExpanded] = useState(false);
-  const [diagonalTab, setDiagonalTab] = useState<"generate" | "custom-build" | "simulation" | "import">(showQueenSimulation || showAntiDiagonalSimulation ? "simulation" : showQueenImport || showAntiDiagonalImport ? "import" : "generate");
   const [simulationTrials, setSimulationTrials] = useState("1000");
   const [simulationTally, setSimulationTally] = useState<Record<number, number>>({});
   const [completedSimulationTrials, setCompletedSimulationTrials] = useState(0);
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationOutputLimit, setSimulationOutputLimit] = useState("18");
   const [simulationOutputs, setSimulationOutputs] = useState<Array<{ puzzle: Grid; givens: number }>>([]);
+  const [diagonalAction, setDiagonalAction] = useState<DiagonalAction>("generate");
   const buildStartedAt = useRef(0);
   const simulationCancelled = useRef(false);
   const showsDiagonalGuides = mode === "diagonal" || mode === "anti-diagonal" || mode === "one-of-each";
@@ -1079,7 +1030,11 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
       const dug = digDiagonal(diggingMethod);
       setGrid(dug.puzzle); setSolution(dug.solution);
       setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution));
-    } else if (mode === "anti-diagonal") { const dug = digAntiDiagonal(diggingMethod); setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution, "anti-diagonal")); } else if (mode === "queen") {
+    } else if (mode === "anti-diagonal") {
+      const dug = digAntiDiagonal(diggingMethod);
+      setGrid(dug.puzzle); setSolution(dug.solution);
+      setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution, "anti-diagonal"));
+    } else if (mode === "queen") {
       const dug = digQueen(diggingMethod);
       setGrid(dug.puzzle); setSolution(dug.solution); setDifficulty(rateDiagonalPuzzle(dug.puzzle, dug.solution, "queen"));
     } else {
@@ -1090,7 +1045,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     setCopiedGrid(null);
     setElapsed(performance.now() - started);
   };
-  const selectMode = (nextMode: Mode) => { simulationCancelled.current = true; setIsSimulating(false); setIsBuilding(false); setIsBuiltPuzzle(false); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); router.push(modePaths[nextMode]); };
+  const selectMode = (nextMode: Mode) => { simulationCancelled.current = true; setIsSimulating(false); setIsBuilding(false); setIsBuiltPuzzle(false); setDiagonalAction("generate"); setMode(nextMode); setGrid(emptyGrid()); setSolution(null); setElapsed(null); setDifficulty(null); setWalkthroughIndex(0); setCopiedGrid(null); router.push(modePaths[nextMode]); };
   const toggleProtectedCell = (cell: number) => setProtectedCells(cells => cells.map((selected, index) => index === cell ? !selected : selected));
   const buildPuzzle = () => {
     setIsBuilderExpanded(true);
@@ -1110,54 +1065,20 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
   const haltBuilding = () => { setIsBuilding(false); setBuilderError(`Building halted after ${buildAttempts} attempted completed grids.`); };
   const runQueenSimulation = () => {
     const trials = Number(simulationTrials);
-    if (!Number.isInteger(trials) || trials < 1) return;
+    if (!Number.isInteger(trials) || trials < 1 || trials > 10000) return;
     simulationCancelled.current = false;
     setIsSimulating(true); setSimulationTally({}); setCompletedSimulationTrials(0); setSimulationOutputs([]);
     const tally: Record<number, number> = {};
     let completed = 0;
     const runBatch = () => {
+      // Process one puzzle per browser turn so the histogram visibly updates
+      // after every generated grid rather than jumping in batches.
       const result = digQueen("single");
       const givens = result.puzzle.flat().filter(Boolean).length;
       tally[givens] = (tally[givens] ?? 0) + 1;
-      setSimulationOutputs(outputs => [...outputs, { puzzle: result.puzzle, givens }]);
-      completed += 1;
-      setSimulationTally({ ...tally }); setCompletedSimulationTrials(completed);
-      if (simulationCancelled.current || completed >= trials) { setIsSimulating(false); return; }
-      window.setTimeout(runBatch, 0);
-    };
-    window.setTimeout(runBatch, 0);
-  };
-  const runAntiDiagonalSimulation = () => {
-    const trials = Number(simulationTrials);
-    if (!Number.isInteger(trials) || trials < 1) return;
-    simulationCancelled.current = false;
-    setIsSimulating(true); setSimulationTally({}); setCompletedSimulationTrials(0); setSimulationOutputs([]);
-    const tally: Record<number, number> = {};
-    let completed = 0;
-    const runBatch = () => {
-      const result = digAntiDiagonal("single");
-      const givens = result.puzzle.flat().filter(Boolean).length;
-      tally[givens] = (tally[givens] ?? 0) + 1;
-      setSimulationOutputs(outputs => [...outputs, { puzzle: result.puzzle, givens }]);
-      completed += 1;
-      setSimulationTally({ ...tally }); setCompletedSimulationTrials(completed);
-      if (simulationCancelled.current || completed >= trials) { setIsSimulating(false); return; }
-      window.setTimeout(runBatch, 0);
-    };
-    window.setTimeout(runBatch, 0);
-  };
-  const runDiagonalSimulation = () => {
-    const trials = Number(simulationTrials);
-    if (!Number.isInteger(trials) || trials < 1) return;
-    simulationCancelled.current = false;
-    setIsSimulating(true); setSimulationTally({}); setCompletedSimulationTrials(0); setSimulationOutputs([]);
-    const tally: Record<number, number> = {};
-    let completed = 0;
-    const runBatch = () => {
-      const result = digDiagonal("single");
-      const givens = result.puzzle.flat().filter(Boolean).length;
-      tally[givens] = (tally[givens] ?? 0) + 1;
-      setSimulationOutputs(outputs => [...outputs, { puzzle: result.puzzle, givens }]);
+      if (givens <= Number(simulationOutputLimit)) {
+        setSimulationOutputs(outputs => [...outputs, { puzzle: result.puzzle, givens }]);
+      }
       completed += 1;
       setSimulationTally({ ...tally }); setCompletedSimulationTrials(completed);
       if (simulationCancelled.current || completed >= trials) { setIsSimulating(false); return; }
@@ -1177,11 +1098,10 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         attemptsThisPass += 1;
         const unique = mode === "diagonal"
           ? countDiagonalSolutions(candidatePuzzle) === 1
-          : mode === "anti-diagonal" ? countAntiDiagonalSolutions(candidatePuzzle) === 1 : countQueenSolutions(candidatePuzzle) === 1;
+          : mode === "anti-diagonal"
+            ? countAntiDiagonalSolutions(candidatePuzzle) === 1
+            : countQueenSolutions(candidatePuzzle) === 1;
         if (unique) {
-          // The anti-diagonal rating uses standard Sudoku houses only. Its
-          // special repeated-diagonal condition is used for uniqueness, but
-          // does not create a false distinct-diagonal deduction.
           const candidateDifficulty = rateDiagonalPuzzle(candidatePuzzle, candidateSolution, mode === "diagonal" ? "diagonal" : mode === "anti-diagonal" ? "anti-diagonal" : mode === "queen" ? "queen" : "standard");
           const minimum = Number(minimumDifficulty), maximum = Number(maximumDifficulty);
           if (candidateDifficulty.score < minimum || candidateDifficulty.score > maximum) continue;
@@ -1206,14 +1126,13 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     if (!/^[1-9.]{81}$/.test(text)) { setInputError("Enter exactly 81 digits or periods."); return; }
     const puzzle = Array.from({ length: 9 }, (_, row) => text.slice(row * 9, row * 9 + 9).split("").map(value => value === "." ? 0 : Number(value)));
     const importingQueen = mode === "queen";
-    const importingAntiDiagonal = mode === "anti-diagonal";
-    const solved = importingQueen ? solveQueenGrid(puzzle) : importingAntiDiagonal ? solveAntiDiagonalGrid(puzzle) : solveDiagonalGrid(puzzle);
-    const unique = importingQueen ? countQueenSolutions(puzzle) === 1 : importingAntiDiagonal ? countAntiDiagonalSolutions(puzzle) === 1 : countDiagonalSolutions(puzzle) === 1;
+    const solved = importingQueen ? solveQueenGrid(puzzle) : solveDiagonalGrid(puzzle);
+    const unique = importingQueen ? countQueenSolutions(puzzle) === 1 : countDiagonalSolutions(puzzle) === 1;
     if (!solved || !unique) {
-      setInputError(importingQueen ? "This must be a valid Queen sudoku with one solution." : importingAntiDiagonal ? "This must be a valid Anti-diagonal sudoku with one solution." : "This must be a valid diagonal sudoku with one solution.");
+      setInputError(importingQueen ? "This must be a valid Queen sudoku with one solution." : "This must be a valid diagonal sudoku with one solution.");
       return;
     }
-    setGrid(puzzle); setSolution(solved); setDifficulty(rateDiagonalPuzzle(puzzle, solved, importingQueen ? "queen" : importingAntiDiagonal ? "anti-diagonal" : "diagonal"));
+    setGrid(puzzle); setSolution(solved); setDifficulty(rateDiagonalPuzzle(puzzle, solved, importingQueen ? "queen" : "diagonal"));
     setElapsed(null); setWalkthroughIndex(0); setCopiedGrid(null); setInputError(null); setIsBuiltPuzzle(false);
   };
   const copyGrid = async (board: Grid, kind: "puzzle" | "solution") => {
@@ -1276,7 +1195,6 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     "bent-diagonal": "Each of the four bent diagonals must contain the digits 1-9.",
     "triple-diagonal": "Digits must not repeat along any marked diagonal.",
     queen: "9s cannot see each other along a diagonal.",
-    temp: "Temporary puzzle mode.",
   };
   const modeOptions: { mode: Mode; label: string }[] = [
     { mode: "diagonal", label: "Diagonal" },
@@ -1286,33 +1204,24 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     { mode: "bent-diagonal", label: "Bent diagonal" },
     { mode: "triple-diagonal", label: "Triple diagonal" },
     { mode: "queen", label: "Queen sudoku" },
-    { mode: "temp", label: "Temp sudoku" },
   ];
-  const modeLabels: Record<Mode, string> = Object.fromEntries(modeOptions.map(({ mode, label }) => [mode, label])) as Record<Mode, string>;
-  const runSimulationForMode = () => {
-    const fn = mode === "queen" ? runQueenSimulation : mode === "anti-diagonal" ? runAntiDiagonalSimulation : runDiagonalSimulation;
-    fn();
-  };
 
   return (
     <main className="page">
-      <style>{`.diagonal-guides line { stroke-width: 1.8 !important; stroke-dasharray: 1.5 2.4 !important; } .mode-picker{display:none!important}.mode-select{display:block}.mode-select select{width:100%;min-height:2.7rem;border:1px solid #15803d;border-radius:.4rem;padding:.55rem .85rem;background:#f0fdf4;color:#14532d;font:inherit;font-weight:700;cursor:pointer}.mode-dashboard>.mode-description{margin:.65rem 0 0;color:#374151;line-height:1.4}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}`}</style>
+      <style>{`.diagonal-guides line { stroke-width: 1.8 !important; stroke-dasharray: 1.5 2.4 !important; }`}</style>
       <header className="site-header">
         <h1>Diagonalize My Sudoku</h1>
       </header>
       <div className="app-layout">
         <aside className="mode-dashboard" aria-label="Puzzle modes">
           <p className="dashboard-title">Puzzle modes</p>
-          <label className="mode-select"><span className="sr-only">Puzzle mode</span><select value={mode} onChange={event => selectMode(event.target.value as Mode)} aria-label="Puzzle mode">{modeOptions.map(option => <option value={option.mode} key={option.mode}>{option.label}</option>)}</select></label><p className="mode-description">{descriptions[mode]}</p>
-          <div className="mode-picker">
-            {modeOptions.map(option => <div className="mode-card" key={option.mode}>
-              <button className={mode === option.mode ? "active" : ""} onClick={() => selectMode(option.mode)}>
-                <span>{option.label}</span>
-                {mode === option.mode && <span className="mode-description">{descriptions[option.mode]}</span>}
-              </button>
-            </div>)}
-          </div>
-          {diagonalTab === "custom-build" && <>
+          <label className="mode-picker">
+            <span className="sr-only">Puzzle mode</span>
+            <select value={mode} onChange={event => selectMode(event.target.value as Mode)} aria-label="Puzzle mode">
+              {modeOptions.map(option => <option value={option.mode} key={option.mode}>{option.label}</option>)}
+            </select>
+          </label>
+          <p className="mode-description">{descriptions[mode]}</p>
           <div className="dashboard-difficulty" role="group" aria-label="Required difficulty score range">
             <p className="dashboard-title">Build difficulty</p>
             <label>Minimum score
@@ -1320,16 +1229,14 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
                 <option value="0">0</option>
                 <option value="500">500</option>
                 <option value="600">600</option>
-                <option value="850">850</option>
+                <option value="800">800</option>
                 <option value="1000">1000</option>
-                <option value="1100">1100</option>
               </select>
             </label>
             <label>Maximum score
               <select value={maximumDifficulty} onChange={event => setMaximumDifficulty(event.target.value)} disabled={isBuilding}>
                 <option value="500">500</option>
                 <option value="1000">1000</option>
-                <option value="1100">1100</option>
                 <option value="2000">2000</option>
                 <option value="10000">10000</option>
                 <option value="100000">100000</option>
@@ -1343,28 +1250,33 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
               <option value="double">Double cell digging</option>
             </select>
           </label>
-          </>}
         </aside>
         <div className="workspace">
       <div className="puzzle-actions">
-        <div className="puzzle-actions-tabs">
-          <button className={`generate-button simulation-link ${diagonalTab === "generate" ? "active" : ""}`} onClick={() => setDiagonalTab("generate")}>Button 1</button>
-          <button className={`generate-button simulation-link ${diagonalTab === "custom-build" ? "active" : ""}`} onClick={() => setDiagonalTab("custom-build")}>Button 2</button>
-          <button className={`generate-button simulation-link ${diagonalTab === "simulation" ? "active" : ""}`} onClick={() => setDiagonalTab("simulation")}>Button 3</button>
-          <button className={`generate-button simulation-link ${diagonalTab === "import" ? "active" : ""}`} onClick={() => setDiagonalTab("import")}>Import a grid</button>
-        </div>
-        <hr className="puzzle-actions-divider" />
-        {diagonalTab === "generate" && <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>}
-        {diagonalTab === "custom-build" && <>
-        <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
-        <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
+        {mode === "diagonal" ? <>
+          <button className="generate-button" onClick={() => { setDiagonalAction("generate"); generate(); }} disabled={isBuilding}>Generate</button>
+          <button className="generate-button build-button" onClick={() => { setDiagonalAction("custom-build"); setIsBuilderExpanded(true); }} disabled={isBuilding}>Custom build</button>
+          <button className="generate-button" onClick={() => setDiagonalAction("simulation")}>Simulation</button>
+          <button className="generate-button" onClick={() => setDiagonalAction("import")}>Import a grid</button>
+          <button className="generate-button" onClick={() => setDiagonalAction("verify")}>Verify a grid</button>
+        </> : <>
+          <button className="generate-button" onClick={generate} disabled={isBuilding}>Generate a grid</button>
+          <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build a puzzle</button>
+          <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
+        </>}
+        {mode === "queen" && <>
+          <button className="generate-button simulation-link" onClick={() => router.push("/queen_sudoku/simulation/")}>Simulation</button>
+          <button className="generate-button simulation-link" onClick={() => router.push("/queen_sudoku/import_grid/")}>Import a grid</button>
         </>}
       </div>
-      {diagonalTab === "custom-build" && <>
-      <section className="puzzle-builder" aria-label="Build a puzzle">
+      {mode === "diagonal" && diagonalAction === "simulation" && <section className="puzzle-builder" aria-label="Diagonal Sudoku simulation">
+        <h2>Simulation</h2>
+        <p>Diagonal Sudoku simulation will be added in the next stage. The other Diagonal actions remain available above.</p>
+      </section>}
+      {(mode !== "diagonal" || diagonalAction === "custom-build") && <section className="puzzle-builder" aria-label="Build a puzzle">
         <div className="builder-heading">
           <h2>Build a puzzle</h2>
-          <button className="builder-caret" type="button" onClick={() => setIsBuilderExpanded(expanded => !expanded)} aria-expanded={isBuilderExpanded} aria-label={`${isBuilderExpanded ? "Hide" : "Show"} Build a puzzle settings`}>{isBuilderExpanded ? "⌃" : "⌄"}</button>
+          {mode !== "diagonal" && <button className="builder-caret" type="button" onClick={() => setIsBuilderExpanded(expanded => !expanded)} aria-expanded={isBuilderExpanded} aria-label={`${isBuilderExpanded ? "Hide" : "Show"} Build a puzzle settings`}>{isBuilderExpanded ? "⌃" : "⌄"}</button>}
         </div>
         {isBuilderExpanded && <>
         <p>Select the positions that must be givens. Green cells are the complete clue pattern: every other cell will be blank in the finished puzzle.</p>
@@ -1384,19 +1296,23 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
         <div className="builder-actions">
           <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(true))} disabled={isBuilding}>Select all</button>
           <button className="copy-grid-button" onClick={() => setProtectedCells(Array(81).fill(false))} disabled={isBuilding}>Clear selection</button>
+          {mode === "diagonal" && <>
+            <button className="generate-button build-button" onClick={buildPuzzle} disabled={isBuilding}>Build puzzle</button>
+            <button className="halt-button" onClick={haltBuilding} disabled={!isBuilding}>Halt building puzzle</button>
+          </>}
         </div>
         {isBuilding && <p className="builder-status" role="status">Building from this exact pattern · {buildAttempts} completed grids tested.</p>}
         {builderError && <p className="builder-error" role="alert">{builderError}</p>}
         </>}
-      </section>
-      {diagonalTab === "simulation" && <section className="queen-simulation" aria-label={`${modeLabels[mode]} simulation`}>
+      </section>}
+      {mode === "queen" && showQueenSimulation && <section className="queen-simulation" aria-label="Queen Sudoku simulation">
         <h2>Simulation</h2>
-        <p>Run repeated {modeLabels[mode]} Sudoku generations using single cell digging only. The histogram refreshes after every new puzzle.</p>
+        <p>Run repeated Queen Sudoku generations using single cell digging only. The histogram refreshes after every new puzzle.</p>
         <div className="simulation-actions">
           <label htmlFor="simulation-trials">Trials
-            <input id="simulation-trials" type="number" min="1" step="1" value={simulationTrials} onChange={event => setSimulationTrials(event.target.value)} disabled={isSimulating} />
+            <input id="simulation-trials" type="number" min="1" max="10000" step="1" value={simulationTrials} onChange={event => setSimulationTrials(event.target.value)} disabled={isSimulating} />
           </label>
-          <button className="generate-button" onClick={() => runSimulationForMode()} disabled={isSimulating}>Run simulation</button>
+          <button className="generate-button" onClick={runQueenSimulation} disabled={isSimulating}>Run simulation</button>
           <button className="halt-button" onClick={() => { simulationCancelled.current = true; }} disabled={!isSimulating}>Halt simulation</button>
         </div>
         <label className="simulation-output-filter">Display the latest grid with at most
@@ -1409,13 +1325,32 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
           const maximum = Math.max(...bins.map(bin => bin.tally), 1);
           return <div className="simulation-chart" aria-label="Histogram of empirical tally by number of given cells">
             <div className="simulation-y-axis"><strong>Empirical tally</strong><span>{maximum}</span><span>0</span></div>
-            <div className="simulation-plot"><div className="simulation-bars">{bins.map(bin => <div className="simulation-bar-column" key={bin.givens}><span className="simulation-bar-value">{bin.tally}</span><div className="simulation-bar" style={{ height: `${Math.max(4, (bin.tally / maximum) * 100)}%` }} /><span className="simulation-bin-label">{bin.givens}</span></div>)}</div><strong className="simulation-x-axis">Number of given cells</strong></div>
+            <div className="simulation-plot">
+              <div className="simulation-bars">{bins.map(bin => <div className="simulation-bar-column" key={bin.givens}>
+                <span className="simulation-bar-value">{bin.tally}</span>
+                <div className="simulation-bar" style={{ height: `${Math.max(4, (bin.tally / maximum) * 100)}%` }} />
+                <span className="simulation-bin-label">{bin.givens}</span>
+              </div>)}</div>
+              <strong className="simulation-x-axis">Number of given cells</strong>
+            </div>
             <p className="simulation-progress">{completedSimulationTrials} of {simulationTrials} trials complete{isSimulating ? "…" : "."}</p>
           </div>;
         })()}
-        <div className="simulation-output" aria-live="polite"><h3>Qualifying simulation grids</h3>{(() => { const filteredOutputs = simulationOutputs.filter(({ givens }) => givens <= Number(simulationOutputLimit)); return filteredOutputs.length ? <><p>{filteredOutputs.length} grid{filteredOutputs.length === 1 ? "" : "s"} with at most {simulationOutputLimit} givens.</p><div className="simulation-grid-list">{filteredOutputs.map(({ puzzle, givens }, outputIndex) => <div className="simulation-grid-card" key={`${givens}-${outputIndex}`}><p>Trial grid {outputIndex + 1}: {givens} givens</p><div className="grid-frame"><div className="grid" aria-label={`${modeLabels[mode]} simulation grid ${outputIndex + 1}`}>{puzzle.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}</div></div></div>)}</div></> : <p>Every generated grid with at most {simulationOutputLimit} givens will appear here.</p>; })()}</div>
+        <div className="simulation-output" aria-live="polite">
+          <h3>Qualifying simulation grids</h3>
+          {simulationOutputs.length ? <>
+            <p>{simulationOutputs.length} grid{simulationOutputs.length === 1 ? "" : "s"} with at most {simulationOutputLimit} givens.</p>
+            <div className="simulation-grid-list">
+              {simulationOutputs.map(({ puzzle, givens }, outputIndex) => <div className="simulation-grid-card" key={`${givens}-${outputIndex}`}>
+                <p>Trial grid {outputIndex + 1}: {givens} givens</p>
+                <div className="grid-frame"><div className="grid" aria-label={`Queen Sudoku simulation grid ${outputIndex + 1}`}>
+                  {puzzle.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}
+                </div></div>
+              </div>)}
+            </div>
+          </> : <p>Every generated grid with at most {simulationOutputLimit} givens will appear here.</p>}
+        </div>
       </section>}
-      </>}
       <div className={`puzzle-output ${solution && difficulty ? "puzzle-output-built" : ""}`}>
         <div className="puzzle-display">
           <div className="grid-frame">
@@ -1427,14 +1362,14 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
               {grid.flatMap((row, rowIndex) => row.map((value, columnIndex) => <div className="cell" key={`${rowIndex}-${columnIndex}`}>{value || ""}</div>))}
             </div>
           </div>
-          <div className="grid-copy-actions">
+          {grid.flat().some(Boolean) && <div className="grid-copy-actions">
             <button className="copy-grid-button" onClick={() => copyGrid(grid, "puzzle")} disabled={!grid.flat().some(Boolean)}>
               {copiedGrid === "puzzle" ? "Copied 81 cells" : isBuiltPuzzle ? "Copy built 81-cell puzzle" : "Copy 81-cell grid"}
             </button>
             <button className="copy-grid-button" onClick={() => copyGridImage(grid, "puzzle-image", "sudoku-grid.png")} disabled={!grid.flat().some(Boolean)}>
               {copiedGrid === "puzzle-image" ? "Copied grid image" : copiedGrid === "puzzle-image-download" ? "Downloaded grid image" : "Copy grid image"}
             </button>
-          </div>
+          </div>}
         </div>
         {solution && difficulty && <aside className="built-difficulty-panel" aria-label="Puzzle difficulty and technique tally">
           <h2>Difficulty rating</h2>
@@ -1455,10 +1390,10 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
           <p className="difficulty-note">{difficulty.logical ? "Solved with the adapted sudokUI logical technique path." : "Includes sudokUI’s Brute Force last resort (+10,000 per step), so totals above 10,000 are valid."}</p>
         </aside>}
       </div>
-      {diagonalTab === "import" && <section className="puzzle-loader">
-        <label htmlFor="puzzle-input">Load an 81-cell {modeLabels[mode]} puzzle</label>
+      {(!showQueenSimulation && (mode !== "queen" || showQueenImport) && (mode !== "diagonal" || diagonalAction === "import" || diagonalAction === "verify")) && <section className="puzzle-loader">
+        <label htmlFor="puzzle-input">{mode === "diagonal" && diagonalAction === "import" ? "Import an 81-cell diagonal puzzle" : `Verify an 81-cell ${mode === "queen" ? "Queen" : "diagonal"} puzzle`}</label>
         <textarea id="puzzle-input" value={puzzleInput} onChange={event => setPuzzleInput(event.target.value)} placeholder="Use digits 1–9 and . for blanks" rows={3} />
-        <button className="copy-grid-button" onClick={loadPuzzle}>Load grid</button>
+        <button className="copy-grid-button" onClick={loadPuzzle}>{mode === "diagonal" && diagonalAction === "import" ? "Import grid" : "Verify grid"}</button>
         {inputError && <p role="alert">{inputError}</p>}
       </section>}
       {solution && <section className="dig-results">
@@ -1474,7 +1409,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
                 </svg>}
                 <div className="grid walkthrough-grid" aria-label={`Board after ${step.technique}`}>
                   {step.values.map((value, cell) => <div className={`cell ${step.affectedCells.includes(cell) ? "walkthrough-focus" : ""}`} key={cell}>
-                    {value ? <span className={difficulty.givens[cell] ? "" : "walkthrough-placed"}>{value}</span> : <div className="snyder-notes" aria-label={`Candidates for row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`}>
+                    {value ? <span className={`${difficulty.givens[cell] ? "" : "walkthrough-placed"} ${step.involved.some(item => item.cell === cell && item.digit === value) ? "walkthrough-involved-value" : ""}`}>{value}</span> : <div className="snyder-notes" aria-label={`Candidates for row ${Math.floor(cell / 9) + 1}, column ${cell % 9 + 1}`}>
                       {Array.from({ length: 9 }, (_, index) => index + 1).map(digit => {
                         const available = Boolean(step.candidates[cell] & (1 << (digit - 1)));
                         // Cross-outs document this step's eliminations only.

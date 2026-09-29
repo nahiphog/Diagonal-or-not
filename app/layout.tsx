@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Diagonalize My Sudoku",
+  title: "ABCDEFGH",
   description: "Generate diagonal and anti-diagonal sudoku grids.",
   other: { "codex-preview": "development" },
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },

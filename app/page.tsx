@@ -1213,7 +1213,7 @@ export default function Home({ initialMode = "diagonal", showQueenSimulation = f
     <main className="page">
       <style>{`.diagonal-guides line { stroke-width: 1.8 !important; stroke-dasharray: 1.5 2.4 !important; }`}</style>
       <header className="site-header">
-        <h1>Diagonalize My Sudoku</h1>
+        <h1>ABCDEFGH</h1>
       </header>
       <div className="app-layout">
         <aside className="mode-dashboard" aria-label="Puzzle modes">
